@@ -1,0 +1,916 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QuadList</title>
+<style>
+/* QuadList ブラウザ版の見た目。ライト・ダーク両対応 */
+:root {
+  --bg: #f2f2f7;
+  --panel: #ffffff;
+  --sidebar: #e9e9ef;
+  --text: #1c1c1e;
+  --sub: #6e6e73;
+  --line: #d8d8de;
+  --hover: rgba(0, 0, 0, 0.05);
+  --accent: #0a84ff;
+  --danger: #ff3b30;
+  --drop: rgba(10, 132, 255, 0.15);
+  --shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+  --c-blue: #0a84ff; --c-red: #ff3b30; --c-orange: #ff9500; --c-yellow: #ffcc00; --c-green: #34c759;
+  --c-teal: #30b0c7; --c-purple: #af52de; --c-pink: #ff2d55; --c-gray: #8e8e93;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1c1c1e; --panel: #2c2c2e; --sidebar: #18181a; --text: #f2f2f7; --sub: #a1a1a6;
+    --line: #3a3a3c; --hover: rgba(255, 255, 255, 0.06); --drop: rgba(10, 132, 255, 0.25);
+    --shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+  font-size: 15px;
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+input, textarea { font: inherit; color: inherit; }
+
+.app { display: grid; grid-template-columns: 260px 1fr; height: 100vh; }
+
+/* 左の一覧 */
+.sidebar { background: var(--sidebar); padding: 16px 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.brand { font-weight: 700; font-size: 18px; padding: 4px 8px 8px; }
+.nav-section { font-size: 12px; font-weight: 700; color: var(--sub); padding: 12px 8px 4px; }
+.nav-item {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  border: 0; background: transparent; padding: 8px; border-radius: 8px;
+}
+.nav-item:hover { background: var(--hover); }
+.nav-item.active { background: var(--panel); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); font-weight: 600; }
+.nav-item.drop-target { background: var(--drop); outline: 2px solid var(--accent); }
+.nav-item .count { margin-left: auto; color: var(--sub); font-variant-numeric: tabular-nums; }
+.dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.inbox-icon { width: 18px; text-align: center; flex: none; font-size: 13px; }
+.add-project { border: 1px dashed var(--line); background: transparent; border-radius: 8px; padding: 8px; color: var(--sub); }
+.add-project:hover { background: var(--hover); }
+.note { margin-top: auto; font-size: 11px; color: var(--sub); line-height: 1.5; padding: 0 4px; }
+
+/* 右の中身 */
+.main { overflow-y: auto; padding: 24px 32px 96px; }
+.header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.header h1 { font-size: 24px; margin: 0; }
+.header .edit { margin-left: auto; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 12px; }
+
+.add-form { display: flex; gap: 8px; margin-bottom: 8px; }
+.add-form textarea {
+  flex: 1; resize: none; border: 1px solid var(--line); background: var(--panel);
+  border-radius: 10px; padding: 10px 12px; height: 42px; max-height: 160px;
+  line-height: 20px; overflow: hidden;
+}
+.add-form button { border: 0; background: var(--accent); color: #fff; border-radius: 10px; padding: 0 18px; font-weight: 600; }
+.hint { font-size: 12px; color: var(--sub); margin: 0 0 16px; }
+
+.card { background: var(--panel); border-radius: 12px; padding: 4px 0; }
+.empty { color: var(--sub); padding: 16px; text-align: center; }
+
+.row {
+  display: flex; align-items: center; gap: 10px; padding: 8px 12px; position: relative;
+  border-bottom: 1px solid var(--line);
+}
+.row:last-child { border-bottom: 0; }
+.row:hover { background: var(--hover); }
+.row.dragging { opacity: 0.35; }
+.row .grip { cursor: grab; color: var(--sub); user-select: none; padding: 0 2px; }
+.check {
+  width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--sub);
+  background: transparent; flex: none; padding: 0; display: grid; place-items: center;
+}
+.check.done { background: var(--accent); border-color: var(--accent); color: #fff; font-size: 13px; }
+.title { flex: 1; min-width: 0; overflow-wrap: anywhere; cursor: text; }
+.row.done .title { text-decoration: line-through; color: var(--sub); }
+.title-input { flex: 1; border: 1px solid var(--accent); border-radius: 6px; padding: 2px 6px; background: var(--panel); }
+.where { font-size: 12px; color: var(--sub); }
+.row-actions { display: flex; gap: 4px; opacity: 0; }
+.row:hover .row-actions, .row:focus-within .row-actions { opacity: 1; }
+.icon-btn { border: 0; background: transparent; border-radius: 6px; padding: 4px 8px; color: var(--sub); }
+.icon-btn:hover { background: var(--hover); color: var(--text); }
+/* 完了直後は3秒そのまま残し、下の縁に残り時間のバーを出す */
+.linger-bar { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--accent); opacity: 0.7; animation: linger 3s linear forwards; }
+@keyframes linger { from { width: 100%; } to { width: 0; } }
+
+/* プロジェクトの中: 未分類 + 4マス。上の列が「重要/重要でない」、左の行が「緊急/緊急でない」 */
+.zone { background: var(--panel); border-radius: 12px; padding: 4px 0 8px; border: 2px solid transparent; min-width: 0; }
+.zone.unsorted { margin-bottom: 16px; }
+.zone.drop-target { border-color: var(--accent); background: linear-gradient(var(--drop), var(--drop)), var(--panel); }
+.zone-head { display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 12px 4px; font-size: 14px; }
+.zone-head .count { margin-left: auto; color: var(--sub); font-weight: 400; font-variant-numeric: tabular-nums; }
+.zone[data-quadrant="1"] .zone-head span:first-child { color: var(--c-red); }
+.zone[data-quadrant="3"] .zone-head span:first-child { color: var(--c-orange); }
+.zone[data-quadrant="2"] .zone-head span:first-child { color: var(--c-blue); }
+.zone[data-quadrant="4"] .zone-head span:first-child { color: var(--c-gray); }
+.zone-list { min-height: 44px; }
+.zone-empty { color: var(--sub); font-size: 13px; padding: 12px; text-align: center; }
+.matrix { display: grid; grid-template-columns: 24px 1fr 1fr; grid-template-rows: auto 1fr 1fr; gap: 10px; }
+.matrix .zone { min-height: 180px; }
+.axis { font-size: 12px; font-weight: 700; color: var(--sub); text-align: center; }
+.axis.row-axis { writing-mode: vertical-rl; align-self: center; letter-spacing: 0.1em; }
+/* 落とす位置の線 */
+.row.insert-before { box-shadow: inset 0 3px 0 var(--accent); }
+.zone-list.insert-end { box-shadow: inset 0 -3px 0 var(--accent); }
+
+details.done-section { margin-top: 16px; }
+details.done-section summary { cursor: pointer; color: var(--sub); font-weight: 600; padding: 8px 4px; }
+.done-actions { padding: 8px 12px; }
+.text-btn { border: 0; background: transparent; color: var(--danger); padding: 4px 0; }
+
+/* メニュー */
+.menu {
+  position: fixed; z-index: 20; background: var(--panel); border-radius: 10px; box-shadow: var(--shadow);
+  padding: 6px; min-width: 220px; border: 1px solid var(--line);
+}
+.menu .menu-label { font-size: 11px; color: var(--sub); padding: 6px 10px 2px; }
+.menu button { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: transparent; text-align: left; padding: 8px 10px; border-radius: 6px; }
+.menu button:hover { background: var(--hover); }
+.menu .danger { color: var(--danger); }
+
+/* 取り消し */
+.toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 30;
+  display: flex; gap: 16px; align-items: center; background: var(--text); color: var(--bg);
+  border-radius: 999px; padding: 10px 12px 10px 20px; box-shadow: var(--shadow); max-width: calc(100vw - 32px);
+}
+.toast[hidden] { display: none; }
+.toast button { border: 0; background: transparent; color: var(--accent); font-weight: 700; padding: 4px 8px; }
+
+/* プロジェクトの設定 */
+dialog { border: 0; border-radius: 14px; padding: 20px; background: var(--panel); color: var(--text); box-shadow: var(--shadow); width: min(420px, calc(100vw - 32px)); }
+dialog::backdrop { background: rgba(0, 0, 0, 0.3); }
+dialog h2 { margin: 0 0 16px; font-size: 18px; }
+.field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--sub); }
+.field input { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--bg); font-size: 15px; color: var(--text); }
+.colors { border: 0; padding: 0; margin: 16px 0; display: flex; gap: 10px; flex-wrap: wrap; }
+.colors legend { font-size: 13px; color: var(--sub); margin-bottom: 8px; }
+.color-option { width: 28px; height: 28px; border-radius: 50%; border: 3px solid transparent; padding: 0; }
+.color-option[aria-checked="true"] { border-color: var(--text); }
+.dialog-actions { display: flex; gap: 8px; align-items: center; }
+.dialog-actions .spacer { flex: 1; }
+.dialog-actions button { border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 8px 14px; }
+.dialog-actions .primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.dialog-actions .danger { color: var(--danger); }
+
+@media (max-width: 720px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; height: auto; min-height: 100vh; }
+  .sidebar { max-height: none; }
+  .main { padding: 16px; }
+  .matrix { grid-template-columns: 1fr; }
+  .matrix .axis { display: none; }
+  .matrix .zone { min-height: 0; }
+}
+
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" aria-label="一覧">
+    <div class="brand">QuadList</div>
+    <nav id="nav"></nav>
+    <button class="add-project" id="add-project" type="button">＋ 新しいプロジェクト</button>
+    <p class="note">データはこのブラウザの中だけに保存されます。機密情報は書かないでください。</p>
+  </aside>
+  <main class="main" id="main"></main>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<dialog id="project-dialog">
+  <form method="dialog" id="project-form">
+    <h2 id="project-dialog-title">プロジェクト</h2>
+    <label class="field">名前<input id="project-name" required maxlength="60" autocomplete="off"></label>
+    <fieldset class="colors" id="project-colors"><legend>色</legend></fieldset>
+    <div class="dialog-actions">
+      <button type="button" class="danger" id="project-delete">削除</button>
+      <span class="spacer"></span>
+      <button type="button" id="project-cancel">キャンセル</button>
+      <button type="submit" class="primary">保存</button>
+    </div>
+  </form>
+</dialog>
+<script>
+// QuadList ブラウザ版のデータと計算(画面と切り離す。tests/test.html でテストする)
+// データはこのブラウザの中(localStorage)だけに置く。iPhone 版とはつながらない(docs/BRAINSTORM.md)。
+"use strict";
+
+const QL = (() => {
+  const STORAGE_KEY = "quadlist-web-v1";
+
+  /** マスの位置。iPhone 版と同じ(q1 = 左上, q3 = 右上, q2 = 左下, q4 = 右下, 0 = 未分類) */
+  const Quadrant = { unsorted: 0, q1: 1, q2: 2, q3: 3, q4: 4 };
+  /** 並び順(左上 → 右上 → 左下 → 右下 → 未分類) */
+  const DISPLAY_RANK = { 1: 1, 3: 2, 2: 3, 4: 4, 0: 5 };
+
+  /** マスの名前と軸(iPhone 版の「緊急×重要」テンプレートと同じ) */
+  const QUADRANT_NAMES = { 1: "すぐやる", 3: "任せる", 2: "計画する", 4: "やらない", 0: "未分類" };
+  const AXES = { columns: ["重要", "重要でない"], rows: ["緊急", "緊急でない"] };
+
+  /** プロジェクトの色(iPhone 版のリストの色と同じ9色) */
+  const COLORS = ["blue", "red", "orange", "yellow", "green", "teal", "purple", "pink", "gray"];
+
+  function newId() {
+    return (crypto.randomUUID && crypto.randomUUID()) || `id-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  function emptyState() {
+    return { version: 1, projects: [], items: [] };
+  }
+
+  // MARK: 保存
+
+  function load(storage = localStorage) {
+    try {
+      const raw = storage.getItem(STORAGE_KEY);
+      if (!raw) return emptyState();
+      return normalize(JSON.parse(raw));
+    } catch {
+      return emptyState();
+    }
+  }
+
+  function save(state, storage = localStorage) {
+    storage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  /** 読み込んだデータの形をそろえる(足りない項目は初期値で埋める) */
+  function normalize(data) {
+    const state = emptyState();
+    state.projects = (Array.isArray(data?.projects) ? data.projects : []).map((p, i) => ({
+      id: String(p.id ?? newId()),
+      name: String(p.name ?? "プロジェクト"),
+      color: COLORS.includes(p.color) ? p.color : "blue",
+      sortOrder: Number.isFinite(p.sortOrder) ? p.sortOrder : i + 1,
+      createdAt: Number.isFinite(p.createdAt) ? p.createdAt : Date.now(),
+    }));
+    const projectIds = new Set(state.projects.map((p) => p.id));
+    state.items = (Array.isArray(data?.items) ? data.items : []).map((it) => ({
+      id: String(it.id ?? newId()),
+      title: String(it.title ?? ""),
+      // 消えたプロジェクトを指していたら、すべてのやること(null)に戻す
+      projectId: it.projectId && projectIds.has(String(it.projectId)) ? String(it.projectId) : null,
+      parentId: it.parentId ? String(it.parentId) : null,
+      quadrant: [0, 1, 2, 3, 4].includes(it.quadrant) ? it.quadrant : 0,
+      sortOrder: Number.isFinite(it.sortOrder) ? it.sortOrder : 0,
+      done: Boolean(it.done),
+      doneAt: Number.isFinite(it.doneAt) ? it.doneAt : null,
+      createdAt: Number.isFinite(it.createdAt) ? it.createdAt : Date.now(),
+      placedAt: Number.isFinite(it.placedAt) ? it.placedAt : Date.now(),
+    }));
+    return state;
+  }
+
+  // MARK: 並び順
+
+  function displayOrder(items) {
+    return [...items].sort((a, b) =>
+      DISPLAY_RANK[a.quadrant] - DISPLAY_RANK[b.quadrant] ||
+      a.sortOrder - b.sortOrder ||
+      a.createdAt - b.createdAt);
+  }
+
+  /** 前後の項目の間に入れるときの並び順(他の項目を書き換えずに済む) */
+  function orderBetween(before, after) {
+    if (before != null && after != null) return (before + after) / 2;
+    if (before != null) return before + 1;
+    if (after != null) return after - 1;
+    return 0;
+  }
+
+  /** 親のない項目(子は親の下に出す) */
+  function topItems(state, projectId) {
+    return state.items.filter((it) => it.parentId == null && it.projectId === projectId);
+  }
+
+  function openItems(state, projectId) {
+    return displayOrder(topItems(state, projectId).filter((it) => !it.done));
+  }
+
+  function doneItems(state, projectId) {
+    return topItems(state, projectId).filter((it) => it.done).sort((a, b) => (b.doneAt ?? 0) - (a.doneAt ?? 0));
+  }
+
+  function itemsIn(state, projectId, quadrant) {
+    return openItems(state, projectId).filter((it) => it.quadrant === quadrant);
+  }
+
+  function appendOrder(state, projectId, quadrant) {
+    const list = itemsIn(state, projectId, quadrant);
+    return orderBetween(list.length ? list[list.length - 1].sortOrder : null, null);
+  }
+
+  // MARK: 項目
+
+  /** 「、」「,」「，」改行で区切って、複数の項目名にする */
+  function splitTitles(text) {
+    return String(text).split(/[、,，\n]/).map((s) => s.trim()).filter(Boolean);
+  }
+
+  /** 項目を追加する(未分類の末尾)。区切れば複数まとめて足せる。足した項目を返す */
+  function addItems(state, text, projectId = null, now = Date.now()) {
+    const added = [];
+    for (const title of splitTitles(text)) {
+      const item = {
+        id: newId(), title, projectId, parentId: null, quadrant: Quadrant.unsorted,
+        sortOrder: appendOrder(state, projectId, Quadrant.unsorted),
+        done: false, doneAt: null, createdAt: now, placedAt: now,
+      };
+      state.items.push(item);
+      added.push(item);
+    }
+    return added;
+  }
+
+  function findItem(state, id) {
+    return state.items.find((it) => it.id === id);
+  }
+
+  function children(state, parentId) {
+    return state.items.filter((it) => it.parentId === parentId)
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt - b.createdAt);
+  }
+
+  function rename(state, id, title) {
+    const item = findItem(state, id);
+    const trimmed = String(title).trim();
+    if (item && trimmed) item.title = trimmed;
+  }
+
+  /** 完了にできるか。未完了の子が残っている親は完了にできない */
+  function canComplete(state, item) {
+    return item.done || children(state, item.id).every((c) => c.done);
+  }
+
+  function setDone(state, id, done, now = Date.now()) {
+    const item = findItem(state, id);
+    if (!item) return false;
+    if (done && !canComplete(state, item)) return false;
+    item.done = done;
+    item.doneAt = done ? now : null;
+    if (!done && item.parentId == null) {
+      // 未完了に戻した親は、マスの末尾に置き直す
+      item.sortOrder = appendOrder(state, item.projectId, item.quadrant);
+    }
+    return true;
+  }
+
+  /**
+   * マスの中の、指定した項目の前に置く(beforeId が null ならマスの末尾)。
+   * マスが変わったときだけ置いた時刻を数え直す。動かしたら true
+   */
+  function placeItem(state, id, quadrant, beforeId = null, now = Date.now()) {
+    const item = findItem(state, id);
+    if (!item || item.done || item.parentId != null || item.projectId == null) return false;
+    if (![0, 1, 2, 3, 4].includes(quadrant) || beforeId === id) return false;
+    const list = itemsIn(state, item.projectId, quadrant).filter((it) => it.id !== id);
+    const index = beforeId == null ? list.length : list.findIndex((it) => it.id === beforeId);
+    if (index < 0) return false;
+    if (item.quadrant !== quadrant) item.placedAt = now;
+    item.quadrant = quadrant;
+    item.sortOrder = orderBetween(list[index - 1]?.sortOrder ?? null, list[index]?.sortOrder ?? null);
+    return true;
+  }
+
+  /** 削除(子も一緒に)。取り消し用に、消した項目の写しを返す */
+  function deleteItems(state, ids) {
+    const targets = new Set(ids);
+    for (const it of state.items) if (it.parentId && targets.has(it.parentId)) targets.add(it.id);
+    const removed = state.items.filter((it) => targets.has(it.id)).map((it) => ({ ...it }));
+    state.items = state.items.filter((it) => !targets.has(it.id));
+    return removed;
+  }
+
+  function restoreItems(state, removed) {
+    const existing = new Set(state.items.map((it) => it.id));
+    const projectIds = new Set(state.projects.map((p) => p.id));
+    for (const it of removed) {
+      if (existing.has(it.id)) continue;
+      state.items.push({ ...it, projectId: it.projectId && projectIds.has(it.projectId) ? it.projectId : null });
+    }
+  }
+
+  /** プロジェクトへ移す(null = すべてのやること)。マスはそのまま、移した先のマスの末尾へ。置いた時刻は数え直す */
+  function moveToProject(state, ids, projectId, now = Date.now()) {
+    const before = [];
+    for (const id of ids) {
+      const item = findItem(state, id);
+      if (!item || item.parentId != null || item.projectId === projectId) continue;
+      before.push({ ...item });
+      // すべてのやることへ戻すときは、振り分け直す前提でマスを外す
+      if (projectId == null) item.quadrant = Quadrant.unsorted;
+      item.sortOrder = appendOrder(state, projectId, item.quadrant);
+      item.projectId = projectId;
+      item.placedAt = now;
+    }
+    return before;
+  }
+
+  /** 移動の取り消し(写した時点の状態に戻す) */
+  function undoMove(state, before) {
+    for (const b of before) {
+      const item = findItem(state, b.id);
+      if (item) Object.assign(item, b);
+    }
+  }
+
+  // MARK: プロジェクト
+
+  function sortedProjects(state) {
+    return [...state.projects].sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt - b.createdAt);
+  }
+
+  function createProject(state, name, color = "blue", now = Date.now()) {
+    const trimmed = String(name).trim();
+    if (!trimmed) return null;
+    const project = {
+      id: newId(), name: trimmed, color: COLORS.includes(color) ? color : "blue",
+      sortOrder: Math.max(0, ...state.projects.map((p) => p.sortOrder)) + 1, createdAt: now,
+    };
+    state.projects.push(project);
+    return project;
+  }
+
+  function updateProject(state, id, { name, color }) {
+    const project = state.projects.find((p) => p.id === id);
+    if (!project) return;
+    if (name != null && String(name).trim()) project.name = String(name).trim();
+    if (color != null && COLORS.includes(color)) project.color = color;
+  }
+
+  /** プロジェクトを削除する(中の項目も子も消える) */
+  function deleteProject(state, id) {
+    const ids = state.items.filter((it) => it.projectId === id).map((it) => it.id);
+    deleteItems(state, ids);
+    state.projects = state.projects.filter((p) => p.id !== id);
+  }
+
+  function openCount(state, projectId) {
+    return topItems(state, projectId).filter((it) => !it.done).length;
+  }
+
+  return {
+    STORAGE_KEY, Quadrant, COLORS, emptyState, load, save, normalize,
+    displayOrder, orderBetween, topItems, openItems, doneItems, itemsIn, appendOrder,
+    QUADRANT_NAMES, AXES,
+    splitTitles, addItems, findItem, children, rename, canComplete, setDone, placeItem, deleteItems, restoreItems,
+    moveToProject, undoMove, sortedProjects, createProject, updateProject, deleteProject, openCount,
+  };
+})();
+
+if (typeof module !== "undefined") module.exports = QL;
+
+</script>
+<script>
+// QuadList ブラウザ版の画面(W1: 溜める・プロジェクト・振り分け、W2: プロジェクトの中の4マス)
+// 左: すべてのやること とプロジェクトの一覧(ドラッグで落とす先)。右: 選んだものの中身
+"use strict";
+
+(() => {
+  const LINGER_MS = 3000;  // 完了してから消えるまで(この間に戻せる)
+  const UNDO_MS = 5000;    // 「取り消す」を出しておく時間
+
+  let state = QL.load();
+  /** 開いているもの。null = すべてのやること、文字列 = プロジェクトの id */
+  let selected = null;
+  /** 完了直後で残している項目の id */
+  const lingering = new Set();
+  let editingId = null;
+  let draggingId = null;
+
+  const $ = (id) => document.getElementById(id);
+  const nav = $("nav");
+  const main = $("main");
+
+  /** 項目名などを HTML に入れるときは必ずこれを通す */
+  function esc(text) {
+    return String(text).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  function commit() {
+    QL.save(state);
+    render();
+  }
+
+  function projectById(id) {
+    return state.projects.find((p) => p.id === id) ?? null;
+  }
+
+  function nameOf(projectId) {
+    return projectId == null ? "すべてのやること" : projectById(projectId)?.name ?? "";
+  }
+
+  // MARK: 描画
+
+  function render() {
+    if (selected != null && !projectById(selected)) selected = null;
+    renderNav();
+    renderMain();
+  }
+
+  function renderNav() {
+    const entry = (id, label, icon, count) => `
+      <button class="nav-item${selected === id ? " active" : ""}" data-nav="${id ?? ""}" type="button">
+        ${icon}<span>${esc(label)}</span><span class="count">${count}</span>
+      </button>`;
+    nav.innerHTML =
+      entry(null, "すべてのやること", `<span class="inbox-icon">📥</span>`, QL.openCount(state, null)) +
+      `<div class="nav-section">プロジェクト</div>` +
+      (QL.sortedProjects(state).map((p) =>
+        entry(p.id, p.name, `<span class="dot" style="background: var(--c-${p.color})"></span>`, QL.openCount(state, p.id))
+      ).join("") || `<div class="hint" style="padding: 4px 8px">まだありません</div>`);
+  }
+
+  function renderMain() {
+    const project = selected == null ? null : projectById(selected);
+    const open = QL.displayOrder(QL.topItems(state, selected).filter((it) => !it.done || lingering.has(it.id)));
+    const done = QL.doneItems(state, selected).filter((it) => !lingering.has(it.id));
+    main.innerHTML = `
+      <div class="header">
+        ${project ? `<span class="dot" style="background: var(--c-${project.color}); width: 14px; height: 14px"></span>` : ""}
+        <h1>${esc(nameOf(selected))}</h1>
+        ${project ? `<button class="edit" id="edit-project" type="button">プロジェクトを編集</button>` : ""}
+      </div>
+      <form class="add-form" id="add-form">
+        <textarea id="add-text" rows="1" placeholder="やることを追加(Enter で追加 / Shift+Enter で改行)" aria-label="やることを追加"></textarea>
+        <button type="submit">追加</button>
+      </form>
+      <p class="hint">「、」「,」または改行で区切ると、まとめて追加できます。${project
+        ? "追加した項目は未分類に入ります。マスへドラッグして仕分けます。"
+        : "左のプロジェクトへドラッグすると振り分けられます。"}</p>
+      ${project ? matrixHTML(open) : `
+        <div class="card" id="open-list">
+          ${open.length ? open.map(rowHTML).join("") : `<div class="empty">ここに溜めて、あとでプロジェクトへ振り分けます</div>`}
+        </div>`}
+      ${done.length ? `
+        <details class="done-section">
+          <summary>完了済み (${done.length})</summary>
+          <div class="card">${done.map(rowHTML).join("")}
+            <div class="done-actions"><button class="text-btn" data-action="clear-done" type="button">完了済みを削除</button></div>
+          </div>
+        </details>` : ""}`;
+    if (editingId) {
+      const input = main.querySelector(".title-input");
+      input?.focus();
+      input?.select();
+    }
+  }
+
+  /** プロジェクトの中: 未分類 + 4マス(左上 すぐやる、右上 任せる、左下 計画する、右下 やらない) */
+  function matrixHTML(open) {
+    const zone = (q) => {
+      const items = open.filter((it) => it.quadrant === q);
+      return `
+        <section class="zone${q === 0 ? " unsorted" : ""}" data-quadrant="${q}" aria-label="${QL.QUADRANT_NAMES[q]}">
+          <h2 class="zone-head"><span>${QL.QUADRANT_NAMES[q]}</span><span class="count">${items.length}</span></h2>
+          <div class="zone-list">
+            ${items.length ? items.map(rowHTML).join("") : `<div class="zone-empty">${q === 0 ? "追加した項目はここに入ります" : "ここへドラッグ"}</div>`}
+          </div>
+        </section>`;
+    };
+    const { columns, rows } = QL.AXES;
+    return `
+      ${zone(QL.Quadrant.unsorted)}
+      <div class="matrix">
+        <span></span>
+        <div class="axis col">${columns[0]}</div>
+        <div class="axis col">${columns[1]}</div>
+        <div class="axis row-axis">${rows[0]}</div>
+        ${zone(QL.Quadrant.q1)}${zone(QL.Quadrant.q3)}
+        <div class="axis row-axis">${rows[1]}</div>
+        ${zone(QL.Quadrant.q2)}${zone(QL.Quadrant.q4)}
+      </div>`;
+  }
+
+  function rowHTML(item) {
+    const isLinger = lingering.has(item.id);
+    const title = editingId === item.id
+      ? `<input class="title-input" data-edit="${item.id}" value="${esc(item.title)}" aria-label="名前を変更">`
+      : `<span class="title" data-rename="${item.id}">${esc(item.title)}</span>`;
+    return `
+      <div class="row${item.done ? " done" : ""}" draggable="${item.done ? "false" : "true"}" data-id="${item.id}">
+        <span class="grip" aria-hidden="true">⋮⋮</span>
+        <button class="check${item.done ? " done" : ""}" data-action="toggle" type="button"
+          aria-label="${item.done ? "未完了に戻す" : "完了にする"}">${item.done ? "✓" : ""}</button>
+        ${title}
+        <span class="row-actions">
+          <button class="icon-btn" data-action="menu" type="button" aria-label="メニュー">⋯</button>
+        </span>
+        ${isLinger ? `<span class="linger-bar"></span>` : ""}
+      </div>`;
+  }
+
+  // MARK: 操作
+
+  function addFromInput() {
+    const textarea = $("add-text");
+    const added = QL.addItems(state, textarea.value, selected);
+    if (!added.length) return;
+    commit();
+    $("add-text").focus();
+  }
+
+  function toggle(id) {
+    const item = QL.findItem(state, id);
+    if (!item) return;
+    if (lingering.has(id)) {
+      // 完了直後にもう一度押した → 元の位置のまま戻す
+      lingering.delete(id);
+      item.done = false;
+      item.doneAt = null;
+      commit();
+      return;
+    }
+    if (item.done) {
+      QL.setDone(state, id, false);
+      commit();
+      return;
+    }
+    if (!QL.setDone(state, id, true)) return;
+    lingering.add(id);
+    commit();
+    setTimeout(() => {
+      if (lingering.delete(id)) render();
+    }, LINGER_MS);
+  }
+
+  function move(ids, projectId) {
+    const before = QL.moveToProject(state, ids, projectId);
+    if (!before.length) return;
+    commit();
+    const label = before.length === 1 ? `「${before[0].title}」` : `${before.length}件`;
+    showUndo(`${label}を${nameOf(projectId)}へ移しました`, () => QL.undoMove(state, before));
+  }
+
+  function remove(ids) {
+    const removed = QL.deleteItems(state, ids);
+    if (!removed.length) return;
+    commit();
+    const top = removed.filter((it) => it.parentId == null);
+    const label = top.length === 1 ? `「${top[0].title}」` : `${top.length}件`;
+    showUndo(`${label}を削除しました`, () => QL.restoreItems(state, removed));
+  }
+
+  // MARK: 取り消し
+
+  let undoTimer = null;
+  function showUndo(message, undo) {
+    const toast = $("toast");
+    toast.innerHTML = `<span>${esc(message)}</span><button type="button">取り消す</button>`;
+    toast.hidden = false;
+    toast.querySelector("button").onclick = () => {
+      undo();
+      toast.hidden = true;
+      commit();
+    };
+    clearTimeout(undoTimer);
+    undoTimer = setTimeout(() => { toast.hidden = true; }, UNDO_MS);
+  }
+
+  // MARK: メニュー(移動・戻す・削除)
+
+  function closeMenu() {
+    document.querySelector(".menu")?.remove();
+  }
+
+  function openMenu(item, anchor) {
+    closeMenu();
+    const menu = document.createElement("div");
+    menu.className = "menu";
+    const targets = QL.sortedProjects(state).filter((p) => p.id !== item.projectId);
+    // プロジェクトの中では、ドラッグしなくてもマスを選べるようにする
+    const quadrants = item.projectId == null || item.done ? [] :
+      [1, 3, 2, 4, 0].filter((q) => q !== item.quadrant);
+    menu.innerHTML = `
+      ${quadrants.length ? `<div class="menu-label">マスへ移す</div>` : ""}
+      ${quadrants.map((q) => `<button type="button" data-quadrant="${q}">${QL.QUADRANT_NAMES[q]}</button>`).join("")}
+      ${targets.length ? `<div class="menu-label">プロジェクトへ移す</div>` : ""}
+      ${targets.map((p) => `<button type="button" data-move="${p.id}"><span class="dot" style="background: var(--c-${p.color})"></span>${esc(p.name)}</button>`).join("")}
+      ${item.projectId != null ? `<button type="button" data-move="">📥 すべてのやることへ戻す</button>` : ""}
+      <button type="button" data-rename-menu>名前を変更</button>
+      <button type="button" class="danger" data-delete>削除</button>`;
+    document.body.append(menu);
+    const rect = anchor.getBoundingClientRect();
+    menu.style.top = `${Math.min(rect.bottom + 4, innerHeight - menu.offsetHeight - 8)}px`;
+    menu.style.left = `${Math.max(8, rect.right - menu.offsetWidth)}px`;
+    menu.addEventListener("click", (e) => {
+      const button = e.target.closest("button");
+      if (!button) return;
+      closeMenu();
+      if (button.dataset.quadrant) { if (QL.placeItem(state, item.id, Number(button.dataset.quadrant))) commit(); }
+      else if (button.hasAttribute("data-delete")) remove([item.id]);
+      else if (button.hasAttribute("data-rename-menu")) { editingId = item.id; render(); }
+      else move([item.id], button.dataset.move || null);
+    });
+  }
+
+  // MARK: プロジェクトの作成・編集
+
+  const dialog = $("project-dialog");
+  let dialogProjectId = null;
+  let dialogColor = "blue";
+
+  function renderColors() {
+    $("project-colors").innerHTML = `<legend>色</legend>` + QL.COLORS.map((c) =>
+      `<button type="button" class="color-option" role="radio" aria-checked="${c === dialogColor}" aria-label="${c}"
+        data-color="${c}" style="background: var(--c-${c})"></button>`).join("");
+  }
+
+  function openProjectDialog(project) {
+    dialogProjectId = project?.id ?? null;
+    dialogColor = project?.color ?? "blue";
+    $("project-dialog-title").textContent = project ? "プロジェクトを編集" : "新しいプロジェクト";
+    $("project-name").value = project?.name ?? "";
+    $("project-delete").hidden = !project;
+    renderColors();
+    dialog.showModal();
+    $("project-name").focus();
+  }
+
+  $("project-colors").addEventListener("click", (e) => {
+    const option = e.target.closest("[data-color]");
+    if (!option) return;
+    dialogColor = option.dataset.color;
+    renderColors();
+  });
+  $("project-cancel").addEventListener("click", () => dialog.close());
+  $("project-form").addEventListener("submit", (e) => {
+    const name = $("project-name").value;
+    if (!name.trim()) { e.preventDefault(); return; }
+    if (dialogProjectId) {
+      QL.updateProject(state, dialogProjectId, { name, color: dialogColor });
+    } else {
+      const project = QL.createProject(state, name, dialogColor);
+      if (project) selected = project.id;
+    }
+    commit();
+  });
+  $("project-delete").addEventListener("click", () => {
+    const project = projectById(dialogProjectId);
+    if (!project) return;
+    const count = QL.topItems(state, project.id).length;
+    if (!confirm(`「${project.name}」を削除しますか？\n中の項目(${count}件)もすべて削除されます。元に戻せません。`)) return;
+    QL.deleteProject(state, project.id);
+    dialog.close();
+    selected = null;
+    commit();
+  });
+  $("add-project").addEventListener("click", () => openProjectDialog(null));
+
+  // MARK: イベント
+
+  nav.addEventListener("click", (e) => {
+    const item = e.target.closest("[data-nav]");
+    if (!item) return;
+    selected = item.dataset.nav || null;
+    editingId = null;
+    render();
+  });
+
+  main.addEventListener("submit", (e) => {
+    if (e.target.id !== "add-form") return;
+    e.preventDefault();
+    addFromInput();
+  });
+
+  // 入力欄は、書いた行数に合わせて伸ばす(最大 160px。超えたらスクロール)
+  main.addEventListener("input", (e) => {
+    if (e.target.id !== "add-text") return;
+    const box = e.target;
+    box.style.height = "auto";
+    box.style.height = `${Math.min(box.scrollHeight + 2, 160)}px`;
+    box.style.overflowY = box.scrollHeight > 158 ? "auto" : "hidden";
+  });
+
+  main.addEventListener("keydown", (e) => {
+    if (e.target.id === "add-text" && e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      addFromInput();
+    }
+    if (e.target.classList.contains("title-input")) {
+      if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); e.target.blur(); }
+      if (e.key === "Escape") { editingId = null; render(); }
+    }
+  });
+
+  main.addEventListener("focusout", (e) => {
+    if (!e.target.classList.contains("title-input")) return;
+    QL.rename(state, e.target.dataset.edit, e.target.value);
+    editingId = null;
+    commit();
+  });
+
+  main.addEventListener("click", (e) => {
+    if (e.target.closest("#edit-project")) { openProjectDialog(projectById(selected)); return; }
+    const row = e.target.closest(".row");
+    const action = e.target.closest("[data-action]")?.dataset.action;
+    if (action === "clear-done") {
+      const ids = QL.doneItems(state, selected).map((it) => it.id);
+      if (confirm(`完了済みの${ids.length}件を削除しますか？`)) remove(ids);
+      return;
+    }
+    if (!row) return;
+    const item = QL.findItem(state, row.dataset.id);
+    if (!item) return;
+    if (action === "toggle") toggle(item.id);
+    else if (action === "menu") openMenu(item, e.target.closest("button"));
+    else if (e.target.closest("[data-rename]") && !item.done) { editingId = item.id; render(); }
+  });
+
+  // ドラッグ: 行を左のプロジェクト(または すべてのやること)へ落とすと移す
+  main.addEventListener("dragstart", (e) => {
+    const row = e.target.closest(".row");
+    if (!row) return;
+    draggingId = row.dataset.id;
+    row.classList.add("dragging");
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", draggingId);
+  });
+  main.addEventListener("dragend", () => {
+    draggingId = null;
+    clearDropMarks();
+    document.querySelectorAll(".dragging, .drop-target").forEach((el) => el.classList.remove("dragging", "drop-target"));
+  });
+
+  // ドラッグ: プロジェクトの中では、マスへ落とすと仕分け、マスの中の位置で並べ替え
+  function clearDropMarks() {
+    main.querySelectorAll(".zone.drop-target, .insert-before, .insert-end")
+      .forEach((el) => el.classList.remove("drop-target", "insert-before", "insert-end"));
+  }
+
+  /** マウスの高さから、どの行の前に入れるかを決める(null = 末尾) */
+  function dropBefore(zone, y) {
+    const rows = [...zone.querySelectorAll(".row:not(.dragging)")];
+    return rows.find((row) => {
+      const rect = row.getBoundingClientRect();
+      return y < rect.top + rect.height / 2;
+    }) ?? null;
+  }
+
+  main.addEventListener("dragover", (e) => {
+    const zone = e.target.closest("[data-quadrant]");
+    if (!zone || !draggingId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    const before = dropBefore(zone, e.clientY);
+    clearDropMarks();
+    zone.classList.add("drop-target");
+    if (before) before.classList.add("insert-before");
+    else zone.querySelector(".zone-list").classList.add("insert-end");
+  });
+  main.addEventListener("dragleave", (e) => {
+    const zone = e.target.closest("[data-quadrant]");
+    if (zone && !zone.contains(e.relatedTarget)) clearDropMarks();
+  });
+  main.addEventListener("drop", (e) => {
+    const zone = e.target.closest("[data-quadrant]");
+    if (!zone || !draggingId) return;
+    e.preventDefault();
+    const before = dropBefore(zone, e.clientY);
+    const moved = QL.placeItem(state, draggingId, Number(zone.dataset.quadrant), before?.dataset.id ?? null);
+    clearDropMarks();
+    if (moved) commit();
+  });
+  nav.addEventListener("dragover", (e) => {
+    const target = e.target.closest("[data-nav]");
+    if (!target || !draggingId) return;
+    e.preventDefault();
+    nav.querySelectorAll(".drop-target").forEach((el) => el !== target && el.classList.remove("drop-target"));
+    target.classList.add("drop-target");
+  });
+  nav.addEventListener("dragleave", (e) => {
+    const target = e.target.closest("[data-nav]");
+    if (target && !target.contains(e.relatedTarget)) target.classList.remove("drop-target");
+  });
+  nav.addEventListener("drop", (e) => {
+    const target = e.target.closest("[data-nav]");
+    if (!target || !draggingId) return;
+    e.preventDefault();
+    move([draggingId], target.dataset.nav || null);
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".menu") && !e.target.closest("[data-action='menu']")) closeMenu();
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(); });
+
+  // 別のタブで開いていても、保存したら揃える
+  window.addEventListener("storage", (e) => {
+    if (e.key !== QL.STORAGE_KEY) return;
+    state = QL.load();
+    render();
+  });
+
+  render();
+})();
+
+</script>
+</body>
+</html>
