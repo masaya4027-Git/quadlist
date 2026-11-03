@@ -58,6 +58,16 @@ input, textarea { font: inherit; color: inherit; }
 .nav-item.dragging { opacity: 0.35; }
 .nav-item.insert-before { box-shadow: inset 0 3px 0 var(--accent); }
 .nav-item.insert-after { box-shadow: inset 0 -3px 0 var(--accent); }
+/* 左上に置いてから2時間たったやることの件数(赤丸) */
+.alert-badge {
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; flex: none;
+  border-radius: 999px; background: var(--danger); color: #fff; font-size: 12px; font-weight: 700;
+  font-variant-numeric: tabular-nums; line-height: 1;
+}
+.nav-item .alert-badge { margin-left: auto; }
+.nav-item .alert-badge + .count { margin-left: 6px; }
+.zone-head .alert-badge { margin-left: 2px; }
+.stale-at { font-size: 12px; color: var(--danger); font-weight: 600; white-space: nowrap; }
 .nav-item .count { margin-left: auto; color: var(--sub); font-variant-numeric: tabular-nums; }
 .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .inbox-icon { width: 18px; text-align: center; flex: none; font-size: 13px; }
@@ -679,6 +689,17 @@ const QL = (() => {
     return [...state.projects].sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt - b.createdAt);
   }
 
+  // MARK: 左上に置いたままの項目(赤丸の件数で知らせる)
+
+  /** 左上(すぐやる・今日など)に置いてから、これだけたった項目を知らせる */
+  const STALE_MS = 2 * 60 * 60 * 1000;
+
+  /** 左上に置いてから2時間以上たった、未完了の項目(親のないもの) */
+  function staleItems(state, now = Date.now()) {
+    return state.items.filter((it) => isAlive(it) && it.parentId == null && !it.done &&
+      it.projectId != null && it.quadrant === Quadrant.q1 && now - it.placedAt >= STALE_MS);
+  }
+
   /**
    * 全プロジェクトの鳥瞰図: すべてのプロジェクトの未完了の項目(親のないもの)。
    * プロジェクトの並び順でまとめ、その中はマスの中の並び順。keepIds は完了直後で残している項目
@@ -741,7 +762,7 @@ const QL = (() => {
     splitTitles, addItems, findItem, children, rename, canComplete, setDone, addChildren, childProgress,
     placeItem, deleteItems, restoreItems, isAlive,
     trashItems, undoTrash, trashedItems, trashedChildren, restoreFromTrash, emptyTrash,
-    moveToProject, undoMove, sortedProjects, moveProject, overviewItems, createProject, updateProject, deleteProject, openCount,
+    moveToProject, undoMove, sortedProjects, moveProject, overviewItems, STALE_MS, staleItems, createProject, updateProject, deleteProject, openCount,
   };
 })();
 
@@ -814,18 +835,25 @@ if (typeof module !== "undefined") module.exports = QL;
     rendering = false;
   }
 
+  /** 赤丸の件数(0 なら出さない) */
+  function alertBadge(count) {
+    return count ? `<span class="alert-badge" title="左上に置いてから2時間以上たったやること">${count > 99 ? "99+" : count}</span>` : "";
+  }
+
   function renderNav() {
+    const stale = QL.staleItems(state);
+    const staleIn = (projectId) => stale.filter((it) => it.projectId === projectId).length;
     // プロジェクトはドラッグで並べ替えられる(すべてのやること は先頭に固定)
     const entry = (id, label, icon, count) => `
       <button class="nav-item${!showingTrash && !showingOverview && selected === id ? " active" : ""}" data-nav="${id ?? ""}" type="button"
         ${id == null ? "" : `draggable="true" data-project="${id}"`}>
-        ${icon}<span>${esc(label)}</span><span class="count">${count}</span>
+        ${icon}<span>${esc(label)}</span>${id == null ? "" : alertBadge(staleIn(id))}<span class="count">${count}</span>
       </button>`;
     nav.innerHTML =
       entry(null, "すべてのやること", `<span class="inbox-icon">📥</span>`, QL.openCount(state, null)) +
       `<button class="nav-item${showingOverview ? " active" : ""}" data-view="overview" type="button"
         title="すべてのプロジェクトのやることを、マスの位置ごとにまとめて見る">
-        <span class="inbox-icon">▦</span><span>全プロジェクトの鳥瞰図</span>
+        <span class="inbox-icon">▦</span><span>全プロジェクトの鳥瞰図</span>${alertBadge(stale.length)}
         <span class="count">${state.projects.reduce((sum, p) => sum + QL.openCount(state, p.id), 0)}</span>
       </button>` +
       `<div class="nav-section">プロジェクト</div>` +
@@ -836,6 +864,45 @@ if (typeof module !== "undefined") module.exports = QL;
     trash.classList.toggle("active", showingTrash);
     const count = QL.trashedItems(state).length;
     $("trash-count").textContent = count || "";
+    updateTabBadge(stale.length);
+  }
+
+  // MARK: タブの赤丸(ファビコンに件数を重ねる。タブの名前にも件数を付ける)
+
+  const faviconLink = document.querySelector("link[rel='icon']");
+  const baseFavicon = faviconLink?.href ?? "";
+  let baseFaviconImage = null;
+  let shownTabCount = -1;
+
+  function updateTabBadge(count) {
+    if (count === shownTabCount) return;
+    shownTabCount = count;
+    document.title = count ? `(${count}) QuadList` : "QuadList";
+    if (!faviconLink) return;
+    if (!count) { faviconLink.href = baseFavicon; return; }
+    const draw = () => {
+      const size = 64;
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(baseFaviconImage, 0, 0, size, size);
+      // 右上に赤丸と件数(小さなタブでも読めるよう、大きめに描く)
+      const r = 20;
+      ctx.beginPath();
+      ctx.arc(size - r, r, r, 0, Math.PI * 2);
+      ctx.fillStyle = "#ff3b30";
+      ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.font = `bold ${count > 9 ? 22 : 28}px -apple-system, "Segoe UI", sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(count > 99 ? "99" : String(count), size - r, r + 2);
+      if (shownTabCount === count) faviconLink.href = canvas.toDataURL("image/png");
+    };
+    if (baseFaviconImage?.complete) { draw(); return; }
+    baseFaviconImage = new Image();
+    baseFaviconImage.onload = draw;
+    baseFaviconImage.src = baseFavicon;
   }
 
   function renderMain() {
@@ -939,7 +1006,7 @@ if (typeof module !== "undefined") module.exports = QL;
       const name = overview ? (q === 0 ? "プロジェクト内の未分類" : "") : QL.quadrantName(project, q);
       return `
         <section class="zone${q === 0 ? " unsorted" : ""}${overview ? " overview" : ""}" data-quadrant="${q}" aria-label="${name || `マス${q}`}">
-          <h2 class="zone-head"><span>${name}</span><span class="count">${items.length}</span></h2>
+          <h2 class="zone-head"><span>${name}</span>${q === QL.Quadrant.q1 ? alertBadge(staleCount(items)) : ""}<span class="count">${items.length}</span></h2>
           <div class="zone-list">
             ${items.length ? items.map(row).join("") : `<div class="zone-empty">${q === 0 ? (overview ? "未分類はありません" : "追加した項目はここに入ります") : "ここへドラッグ"}</div>`}
           </div>
@@ -979,6 +1046,22 @@ if (typeof module !== "undefined") module.exports = QL;
       <span class="dot" style="background: var(--c-${project.color})"></span>${esc(project.name)}</button>`;
   }
 
+  /** 左上に置いてから2時間以上たった、未完了の項目か */
+  function isStale(item) {
+    return item.parentId == null && !item.done && item.projectId != null &&
+      item.quadrant === QL.Quadrant.q1 && Date.now() - item.placedAt >= QL.STALE_MS;
+  }
+
+  function staleCount(items) {
+    return items.filter(isStale).length;
+  }
+
+  /** 置いてからの時間(「3時間」「2日」) */
+  function elapsedLabel(time) {
+    const hours = Math.floor((Date.now() - time) / 3600000);
+    return hours < 24 ? `${hours}時間` : `${Math.floor(hours / 24)}日`;
+  }
+
   /** 完了した日時(今日なら時刻だけ、今年なら月日と時刻) */
   function doneLabel(time) {
     const d = new Date(time);
@@ -1013,6 +1096,7 @@ if (typeof module !== "undefined") module.exports = QL;
           title="${blocked ? "子がすべて終わると完了にできます" : ""}">${item.done ? "✓" : ""}</button>
         ${title}
         ${progress ? `<span class="progress">${progress}</span>` : ""}
+        ${isStale(item) ? `<span class="stale-at" title="左上に置いてからの時間">${elapsedLabel(item.placedAt)}</span>` : ""}
         ${showProject ? projectTag(item) : ""}
         ${item.done && item.doneAt ? `<span class="done-at" title="完了した日時">${doneLabel(item.doneAt)} 完了</span>` : ""}
         ${isLinger ? `<span class="linger-bar"></span>` : ""}
@@ -1522,6 +1606,27 @@ if (typeof module !== "undefined") module.exports = QL;
   });
 
   // 別のタブで開いていても、保存したら揃える
+  // 時間がたつだけで件数が増えるので、1分ごとと、タブに戻ったときに数え直す。
+  // 名前の変更中・子の入力中・ドラッグ中は、書きかけを消さないよう、左の一覧とタブだけを描き直す。
+  // 追加の入力欄は、書きかけの文字とカーソルを描き直しのあとに戻す
+  function refreshAlerts() {
+    if (draggingId || draggingProjectId) return;
+    if (editingId || addingChildFor || document.activeElement?.matches("dialog input")) { renderNav(); return; }
+    const box = $("add-text");
+    const kept = box && { value: box.value, focused: document.activeElement === box, start: box.selectionStart, end: box.selectionEnd };
+    render();
+    const next = $("add-text");
+    if (!kept || !next) return;
+    next.value = kept.value;
+    if (kept.value) next.dispatchEvent(new Event("input", { bubbles: true }));  // 高さを合わせ直す
+    if (kept.focused) {
+      next.focus();
+      next.setSelectionRange(kept.start, kept.end);
+    }
+  }
+  setInterval(refreshAlerts, 60 * 1000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshAlerts(); });
+
   window.addEventListener("storage", (e) => {
     if (e.key !== QL.STORAGE_KEY) return;
     state = QL.load();
