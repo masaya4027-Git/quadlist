@@ -149,6 +149,7 @@ button.add-child-btn:hover { background: var(--hover); }
 .zone-empty { color: var(--sub); font-size: 13px; padding: 12px; text-align: center; }
 .matrix { display: grid; grid-template-columns: 24px 1fr 1fr; grid-template-rows: auto 1fr 1fr; gap: 10px; }
 .matrix .zone { min-height: 180px; }
+.matrix.no-axes { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
 .axis { font-size: 12px; font-weight: 700; color: var(--sub); text-align: center; }
 .axis.row-axis { writing-mode: vertical-rl; align-self: center; letter-spacing: 0.1em; }
 /* 落とす位置の線 */
@@ -188,6 +189,16 @@ dialog h2 { margin: 0 0 16px; font-size: 18px; }
 .colors legend { font-size: 13px; color: var(--sub); margin-bottom: 8px; }
 .color-option { width: 28px; height: 28px; border-radius: 50%; border: 3px solid transparent; padding: 0; }
 .color-option[aria-checked="true"] { border-color: var(--text); }
+/* 4マスの分け方(テンプレート)。変えても、項目はマスの位置のまま */
+.templates { border: 0; padding: 0; margin: 0 0 16px; display: flex; flex-direction: column; gap: 6px; }
+.templates legend { font-size: 13px; color: var(--sub); margin-bottom: 8px; }
+.template-option {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left;
+  border: 2px solid var(--line); background: var(--bg); border-radius: 10px; padding: 8px 12px;
+}
+.template-option[aria-checked="true"] { border-color: var(--accent); }
+.template-name { font-weight: 600; font-size: 14px; }
+.template-cells { font-size: 12px; color: var(--sub); }
 .dialog-actions { display: flex; gap: 8px; align-items: center; }
 .dialog-actions .spacer { flex: 1; }
 .dialog-actions button { border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 8px 14px; }
@@ -198,7 +209,7 @@ dialog h2 { margin: 0 0 16px; font-size: 18px; }
   .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; height: auto; min-height: 100vh; }
   .sidebar { max-height: none; }
   .main { padding: 16px; }
-  .matrix { grid-template-columns: 1fr; }
+  .matrix, .matrix.no-axes { grid-template-columns: 1fr; grid-template-rows: none; }
   .matrix .axis { display: none; }
   .matrix .zone { min-height: 0; }
 }
@@ -232,6 +243,7 @@ dialog h2 { margin: 0 0 16px; font-size: 18px; }
     <h2 id="project-dialog-title">プロジェクト</h2>
     <label class="field">名前<input id="project-name" required maxlength="60" autocomplete="off"></label>
     <fieldset class="colors" id="project-colors"><legend>色</legend></fieldset>
+    <fieldset class="templates" id="project-templates"><legend>4マスの分け方</legend></fieldset>
     <div class="dialog-actions">
       <button type="button" class="danger" id="project-delete">削除</button>
       <span class="spacer"></span>
@@ -253,9 +265,31 @@ const QL = (() => {
   /** 並び順(左上 → 右上 → 左下 → 右下 → 未分類) */
   const DISPLAY_RANK = { 1: 1, 3: 2, 2: 3, 4: 4, 0: 5 };
 
-  /** マスの名前と軸(iPhone 版の「緊急×重要」テンプレートと同じ) */
-  const QUADRANT_NAMES = { 1: "すぐやる", 3: "任せる", 2: "計画する", 4: "やらない", 0: "未分類" };
-  const AXES = { columns: ["重要", "重要でない"], rows: ["緊急", "緊急でない"] };
+  /**
+   * 4マスの分け方(テンプレート)。iPhone 版の MatrixTemplate と同じ番号・名前。
+   * axes = 上の列(左, 右)と左の行(上, 下)の名前。null は軸のない4区分(時間軸)。
+   * names = マスの名前(q1 左上, q3 右上, q2 左下, q4 右下)
+   */
+  const TEMPLATES = [
+    { id: 0, name: "緊急×重要", axes: { columns: ["重要", "重要でない"], rows: ["緊急", "緊急でない"] },
+      names: { 1: "すぐやる", 3: "任せる", 2: "計画する", 4: "やらない" } },
+    { id: 1, name: "価値×手間", axes: { columns: ["価値大", "価値小"], rows: ["手間小", "手間大"] },
+      names: { 1: "すぐやる", 3: "ついでにやる", 2: "計画する", 4: "やめる" } },
+    // 2 は「出題頻度×苦手度」だった(2026-11-03 に外した)。保存済みの 2 は緊急×重要として読む
+    { id: 3, name: "集中×所要時間", axes: { columns: ["集中が要る", "要らない"], rows: ["短い", "長い"] },
+      names: { 1: "すぐ片付ける", 3: "すき間にやる", 2: "時間を取る", 4: "ながらでやる" } },
+    { id: 4, name: "時間軸", axes: null,
+      names: { 1: "今日", 3: "今週", 2: "今月", 4: "いつか" } },
+  ];
+
+  /** プロジェクトのテンプレート(知らない番号は 緊急×重要) */
+  function templateOf(project) {
+    return TEMPLATES.find((tpl) => tpl.id === project?.template) ?? TEMPLATES[0];
+  }
+
+  function quadrantName(project, quadrant) {
+    return quadrant === Quadrant.unsorted ? "未分類" : templateOf(project).names[quadrant];
+  }
 
   /** プロジェクトの色(iPhone 版のリストの色と同じ9色) */
   const COLORS = ["blue", "red", "orange", "yellow", "green", "teal", "purple", "pink", "gray"];
@@ -291,6 +325,7 @@ const QL = (() => {
       id: String(p.id ?? newId()),
       name: String(p.name ?? "プロジェクト"),
       color: COLORS.includes(p.color) ? p.color : "blue",
+      template: templateOf(p).id,
       sortOrder: Number.isFinite(p.sortOrder) ? p.sortOrder : i + 1,
       createdAt: Number.isFinite(p.createdAt) ? p.createdAt : Date.now(),
     }));
@@ -625,22 +660,25 @@ const QL = (() => {
     return [...state.projects].sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt - b.createdAt);
   }
 
-  function createProject(state, name, color = "blue", now = Date.now()) {
+  function createProject(state, name, color = "blue", now = Date.now(), template = 0) {
     const trimmed = String(name).trim();
     if (!trimmed) return null;
     const project = {
       id: newId(), name: trimmed, color: COLORS.includes(color) ? color : "blue",
+      template: templateOf({ template }).id,
       sortOrder: Math.max(0, ...state.projects.map((p) => p.sortOrder)) + 1, createdAt: now,
     };
     state.projects.push(project);
     return project;
   }
 
-  function updateProject(state, id, { name, color }) {
+  /** 名前・色・テンプレートを変える。テンプレートを変えても、項目はマスの位置のまま */
+  function updateProject(state, id, { name, color, template }) {
     const project = state.projects.find((p) => p.id === id);
     if (!project) return;
     if (name != null && String(name).trim()) project.name = String(name).trim();
     if (color != null && COLORS.includes(color)) project.color = color;
+    if (TEMPLATES.some((tpl) => tpl.id === template)) project.template = template;
   }
 
   /** プロジェクトを削除する(中の項目も子も消える) */
@@ -657,7 +695,7 @@ const QL = (() => {
   return {
     STORAGE_KEY, Quadrant, COLORS, emptyState, load, save, normalize, exportJSON, parseImport,
     displayOrder, orderBetween, topItems, openItems, doneItems, itemsIn, appendOrder,
-    QUADRANT_NAMES, AXES,
+    TEMPLATES, templateOf, quadrantName,
     splitTitles, addItems, findItem, children, rename, canComplete, setDone, addChildren, childProgress,
     placeItem, deleteItems, restoreItems, isAlive,
     trashItems, undoTrash, trashedItems, trashedChildren, restoreFromTrash, emptyTrash,
@@ -765,7 +803,7 @@ if (typeof module !== "undefined") module.exports = QL;
       <p class="hint">「、」「,」または改行で区切ると、まとめて追加できます。${project
         ? "追加した項目は未分類に入ります。マスへドラッグして仕分けます。"
         : "左のプロジェクトへドラッグすると振り分けられます。"}</p>
-      ${project ? matrixHTML(open) : `
+      ${project ? matrixHTML(project, open) : `
         <div class="card" id="open-list">
           ${open.length ? open.map(rowHTML).join("") : `<div class="empty">ここに溜めて、あとでプロジェクトへ振り分けます</div>`}
         </div>`}
@@ -816,19 +854,30 @@ if (typeof module !== "undefined") module.exports = QL;
       </div>`;
   }
 
-  /** プロジェクトの中: 未分類 + 4マス(左上 すぐやる、右上 任せる、左下 計画する、右下 やらない) */
-  function matrixHTML(open) {
+  /** プロジェクトの中: 未分類 + 4マス。マスの名前と軸はプロジェクトのテンプレートで決まる */
+  function matrixHTML(project, open) {
     const zone = (q) => {
       const items = open.filter((it) => it.quadrant === q);
+      const name = QL.quadrantName(project, q);
       return `
-        <section class="zone${q === 0 ? " unsorted" : ""}" data-quadrant="${q}" aria-label="${QL.QUADRANT_NAMES[q]}">
-          <h2 class="zone-head"><span>${QL.QUADRANT_NAMES[q]}</span><span class="count">${items.length}</span></h2>
+        <section class="zone${q === 0 ? " unsorted" : ""}" data-quadrant="${q}" aria-label="${name}">
+          <h2 class="zone-head"><span>${name}</span><span class="count">${items.length}</span></h2>
           <div class="zone-list">
             ${items.length ? items.map(rowHTML).join("") : `<div class="zone-empty">${q === 0 ? "追加した項目はここに入ります" : "ここへドラッグ"}</div>`}
           </div>
         </section>`;
     };
-    const { columns, rows } = QL.AXES;
+    const axes = QL.templateOf(project).axes;
+    if (!axes) {
+      // 時間軸のように軸のない4区分は、マスの名前だけで並べる
+      return `
+        ${zone(QL.Quadrant.unsorted)}
+        <div class="matrix no-axes">
+          ${zone(QL.Quadrant.q1)}${zone(QL.Quadrant.q3)}
+          ${zone(QL.Quadrant.q2)}${zone(QL.Quadrant.q4)}
+        </div>`;
+    }
+    const { columns, rows } = axes;
     return `
       ${zone(QL.Quadrant.unsorted)}
       <div class="matrix">
@@ -982,6 +1031,16 @@ if (typeof module !== "undefined") module.exports = QL;
   const dialog = $("project-dialog");
   let dialogProjectId = null;
   let dialogColor = "blue";
+  let dialogTemplate = 0;
+
+  /** テンプレートの選択肢。名前と、4マスの名前(左上→右上→左下→右下)を見せる */
+  function renderTemplates() {
+    $("project-templates").innerHTML = `<legend>4マスの分け方</legend>` + QL.TEMPLATES.map((tpl) => `
+      <button type="button" class="template-option" role="radio" aria-checked="${tpl.id === dialogTemplate}" data-template="${tpl.id}">
+        <span class="template-name">${tpl.name}</span>
+        <span class="template-cells">${[1, 3, 2, 4].map((q) => tpl.names[q]).join("・")}</span>
+      </button>`).join("");
+  }
 
   function renderColors() {
     $("project-colors").innerHTML = `<legend>色</legend>` + QL.COLORS.map((c) =>
@@ -992,10 +1051,12 @@ if (typeof module !== "undefined") module.exports = QL;
   function openProjectDialog(project) {
     dialogProjectId = project?.id ?? null;
     dialogColor = project?.color ?? "blue";
+    dialogTemplate = project?.template ?? 0;
     $("project-dialog-title").textContent = project ? "プロジェクトを編集" : "新しいプロジェクト";
     $("project-name").value = project?.name ?? "";
     $("project-delete").hidden = !project;
     renderColors();
+    renderTemplates();
     dialog.showModal();
     $("project-name").focus();
   }
@@ -1006,14 +1067,20 @@ if (typeof module !== "undefined") module.exports = QL;
     dialogColor = option.dataset.color;
     renderColors();
   });
+  $("project-templates").addEventListener("click", (e) => {
+    const option = e.target.closest("[data-template]");
+    if (!option) return;
+    dialogTemplate = Number(option.dataset.template);
+    renderTemplates();
+  });
   $("project-cancel").addEventListener("click", () => dialog.close());
   $("project-form").addEventListener("submit", (e) => {
     const name = $("project-name").value;
     if (!name.trim()) { e.preventDefault(); return; }
     if (dialogProjectId) {
-      QL.updateProject(state, dialogProjectId, { name, color: dialogColor });
+      QL.updateProject(state, dialogProjectId, { name, color: dialogColor, template: dialogTemplate });
     } else {
-      const project = QL.createProject(state, name, dialogColor);
+      const project = QL.createProject(state, name, dialogColor, Date.now(), dialogTemplate);
       if (project) { selected = project.id; showingTrash = false; }
     }
     commit();
