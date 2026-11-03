@@ -90,6 +90,17 @@ input, textarea { font: inherit; color: inherit; }
   background: transparent; flex: none; padding: 0; display: grid; place-items: center;
 }
 .check.done { background: var(--accent); border-color: var(--accent); color: #fff; font-size: 13px; }
+/* 子が残っている親は完了にできない(押せないことが見てわかるように点線にする) */
+.check:disabled { border-style: dotted; opacity: 0.5; cursor: not-allowed; }
+/* 子: 親の下に字下げして並べる。親との間の線は出さない */
+.row.top:has(+ .row.child) { border-bottom: 0; }
+.row.child { padding-left: 40px; border-bottom: 0; padding-top: 4px; padding-bottom: 4px; }
+.row.child + .row.top { border-top: 1px solid var(--line); }
+.row.child .check { width: 18px; height: 18px; }
+.row.child .check.done { font-size: 11px; }
+.row.child .title { font-size: 14px; }
+.progress { font-size: 12px; color: var(--sub); font-variant-numeric: tabular-nums; }
+.child-input { flex: 1; border: 1px solid var(--accent); border-radius: 6px; padding: 4px 8px; background: var(--panel); font-size: 14px; }
 .title { flex: 1; min-width: 0; overflow-wrap: anywhere; cursor: text; }
 .row.done .title { text-decoration: line-through; color: var(--sub); }
 .title-input { flex: 1; border: 1px solid var(--accent); border-radius: 6px; padding: 2px 6px; background: var(--panel); }
@@ -265,6 +276,14 @@ const QL = (() => {
       createdAt: Number.isFinite(it.createdAt) ? it.createdAt : Date.now(),
       placedAt: Number.isFinite(it.placedAt) ? it.placedAt : Date.now(),
     }));
+    // 親子は1段だけ。親が見つからない子は、見えなくならないように親のない項目にする。子は親と同じプロジェクトに置く
+    const tops = new Map(state.items.filter((it) => it.parentId == null).map((it) => [it.id, it]));
+    for (const it of state.items) {
+      if (it.parentId == null) continue;
+      const parent = tops.get(it.parentId);
+      if (parent) it.projectId = parent.projectId;
+      else it.parentId = null;
+    }
     return state;
   }
 
@@ -359,7 +378,36 @@ const QL = (() => {
       // 未完了に戻した親は、マスの末尾に置き直す
       item.sortOrder = appendOrder(state, item.projectId, item.quadrant);
     }
+    if (!done && item.parentId != null) {
+      // 子を未完了に戻したら、完了にしていた親も戻す(子が残っている親は完了にしない)
+      const parent = findItem(state, item.parentId);
+      if (parent?.done) setDone(state, parent.id, false, now);
+    }
     return true;
+  }
+
+  /** 子を追加する(親の子の末尾)。区切れば複数まとめて足せる。完了済みの親や子には足さない */
+  function addChildren(state, parentId, text, now = Date.now()) {
+    const parent = findItem(state, parentId);
+    if (!parent || parent.done || parent.parentId != null) return [];
+    const added = [];
+    for (const title of splitTitles(text)) {
+      const list = children(state, parentId);
+      const item = {
+        id: newId(), title, projectId: parent.projectId, parentId, quadrant: Quadrant.unsorted,
+        sortOrder: orderBetween(list.length ? list[list.length - 1].sortOrder : null, null),
+        done: false, doneAt: null, createdAt: now, placedAt: now,
+      };
+      state.items.push(item);
+      added.push(item);
+    }
+    return added;
+  }
+
+  /** 子の進み具合(「1/3」)。子がなければ空文字 */
+  function childProgress(state, parentId) {
+    const list = children(state, parentId);
+    return list.length ? `${list.filter((c) => c.done).length}/${list.length}` : "";
   }
 
   /**
@@ -409,6 +457,11 @@ const QL = (() => {
       item.sortOrder = appendOrder(state, projectId, item.quadrant);
       item.projectId = projectId;
       item.placedAt = now;
+      // 子も親と同じプロジェクトへ(古いプロジェクトを消したときに、子だけ消えないように)
+      for (const child of children(state, item.id)) {
+        before.push({ ...child });
+        child.projectId = projectId;
+      }
     }
     return before;
   }
@@ -460,7 +513,8 @@ const QL = (() => {
     STORAGE_KEY, Quadrant, COLORS, emptyState, load, save, normalize,
     displayOrder, orderBetween, topItems, openItems, doneItems, itemsIn, appendOrder,
     QUADRANT_NAMES, AXES,
-    splitTitles, addItems, findItem, children, rename, canComplete, setDone, placeItem, deleteItems, restoreItems,
+    splitTitles, addItems, findItem, children, rename, canComplete, setDone, addChildren, childProgress,
+    placeItem, deleteItems, restoreItems,
     moveToProject, undoMove, sortedProjects, createProject, updateProject, deleteProject, openCount,
   };
 })();
@@ -484,6 +538,10 @@ if (typeof module !== "undefined") module.exports = QL;
   const lingering = new Set();
   let editingId = null;
   let draggingId = null;
+  /** 「子を追加」の入力欄を開いている親の id */
+  let addingChildFor = null;
+  /** 描き直しで入力欄が消えるときの focusout を無視するため */
+  let rendering = false;
 
   const $ = (id) => document.getElementById(id);
   const nav = $("nav");
@@ -511,8 +569,12 @@ if (typeof module !== "undefined") module.exports = QL;
 
   function render() {
     if (selected != null && !projectById(selected)) selected = null;
+    const parent = addingChildFor && QL.findItem(state, addingChildFor);
+    if (!parent || parent.done) addingChildFor = null;
+    rendering = true;
     renderNav();
     renderMain();
+    rendering = false;
   }
 
   function renderNav() {
@@ -560,6 +622,8 @@ if (typeof module !== "undefined") module.exports = QL;
       const input = main.querySelector(".title-input");
       input?.focus();
       input?.select();
+    } else if (addingChildFor) {
+      main.querySelector(".child-input")?.focus();
     }
   }
 
@@ -589,22 +653,37 @@ if (typeof module !== "undefined") module.exports = QL;
       </div>`;
   }
 
+  /** 1行。親のない項目は、未完了なら下に子と「子を追加」の入力欄を続ける */
   function rowHTML(item) {
     const isLinger = lingering.has(item.id);
+    const isChild = item.parentId != null;
+    const draggable = !isChild && !item.done;
+    // 子が残っている親は完了にできない
+    const blocked = !item.done && !QL.canComplete(state, item);
+    const progress = isChild ? "" : QL.childProgress(state, item.id);
     const title = editingId === item.id
       ? `<input class="title-input" data-edit="${item.id}" value="${esc(item.title)}" aria-label="名前を変更">`
       : `<span class="title" data-rename="${item.id}">${esc(item.title)}</span>`;
-    return `
-      <div class="row${item.done ? " done" : ""}" draggable="${item.done ? "false" : "true"}" data-id="${item.id}">
-        <span class="grip" aria-hidden="true">⋮⋮</span>
-        <button class="check${item.done ? " done" : ""}" data-action="toggle" type="button"
-          aria-label="${item.done ? "未完了に戻す" : "完了にする"}">${item.done ? "✓" : ""}</button>
+    const row = `
+      <div class="row ${isChild ? "child" : "top"}${item.done ? " done" : ""}" draggable="${draggable}" data-id="${item.id}">
+        <span class="grip" aria-hidden="true">${draggable ? "⋮⋮" : ""}</span>
+        <button class="check${item.done ? " done" : ""}" data-action="toggle" type="button"${blocked ? " disabled" : ""}
+          aria-label="${item.done ? "未完了に戻す" : "完了にする"}"
+          title="${blocked ? "子がすべて終わると完了にできます" : ""}">${item.done ? "✓" : ""}</button>
         ${title}
+        ${progress ? `<span class="progress">${progress}</span>` : ""}
         <span class="row-actions">
           <button class="icon-btn" data-action="menu" type="button" aria-label="メニュー">⋯</button>
         </span>
         ${isLinger ? `<span class="linger-bar"></span>` : ""}
       </div>`;
+    if (isChild || item.done) return row;
+    const adding = addingChildFor === item.id ? `
+      <div class="row child adding">
+        <span class="grip"></span>
+        <input class="child-input" data-parent="${item.id}" placeholder="子を追加(Enter で追加 / Esc で閉じる)" aria-label="子を追加">
+      </div>` : "";
+    return row + QL.children(state, item.id).map(rowHTML).join("") + adding;
   }
 
   // MARK: 操作
@@ -620,6 +699,13 @@ if (typeof module !== "undefined") module.exports = QL;
   function toggle(id) {
     const item = QL.findItem(state, id);
     if (!item) return;
+    if (item.parentId != null) {
+      // 子は消さずに、親の下で線を引いたまま残す。戻したら親も未完了に戻る
+      QL.setDone(state, id, !item.done);
+      if (!item.done) lingering.delete(item.parentId);
+      commit();
+      return;
+    }
     if (lingering.has(id)) {
       // 完了直後にもう一度押した → 元の位置のまま戻す
       lingering.delete(id);
@@ -654,7 +740,8 @@ if (typeof module !== "undefined") module.exports = QL;
     if (!removed.length) return;
     commit();
     const top = removed.filter((it) => it.parentId == null);
-    const label = top.length === 1 ? `「${top[0].title}」` : `${top.length}件`;
+    const shown = top.length ? top : removed;  // 子だけを消したときは子の名前を出す
+    const label = shown.length === 1 ? `「${shown[0].title}」` : `${shown.length}件`;
     showUndo(`${label}を削除しました`, () => QL.restoreItems(state, removed));
   }
 
@@ -684,16 +771,19 @@ if (typeof module !== "undefined") module.exports = QL;
     closeMenu();
     const menu = document.createElement("div");
     menu.className = "menu";
-    const targets = QL.sortedProjects(state).filter((p) => p.id !== item.projectId);
+    // 子はプロジェクトやマスを持たない(親と一緒に動く)ので、名前の変更と削除だけ
+    const isTop = item.parentId == null;
+    const targets = isTop ? QL.sortedProjects(state).filter((p) => p.id !== item.projectId) : [];
     // プロジェクトの中では、ドラッグしなくてもマスを選べるようにする
-    const quadrants = item.projectId == null || item.done ? [] :
+    const quadrants = !isTop || item.projectId == null || item.done ? [] :
       [1, 3, 2, 4, 0].filter((q) => q !== item.quadrant);
     menu.innerHTML = `
+      ${isTop && !item.done ? `<button type="button" data-add-child>＋ 子を追加</button>` : ""}
       ${quadrants.length ? `<div class="menu-label">マスへ移す</div>` : ""}
       ${quadrants.map((q) => `<button type="button" data-quadrant="${q}">${QL.QUADRANT_NAMES[q]}</button>`).join("")}
       ${targets.length ? `<div class="menu-label">プロジェクトへ移す</div>` : ""}
       ${targets.map((p) => `<button type="button" data-move="${p.id}"><span class="dot" style="background: var(--c-${p.color})"></span>${esc(p.name)}</button>`).join("")}
-      ${item.projectId != null ? `<button type="button" data-move="">📥 すべてのやることへ戻す</button>` : ""}
+      ${isTop && item.projectId != null ? `<button type="button" data-move="">📥 すべてのやることへ戻す</button>` : ""}
       <button type="button" data-rename-menu>名前を変更</button>
       <button type="button" class="danger" data-delete>削除</button>`;
     document.body.append(menu);
@@ -704,7 +794,8 @@ if (typeof module !== "undefined") module.exports = QL;
       const button = e.target.closest("button");
       if (!button) return;
       closeMenu();
-      if (button.dataset.quadrant) { if (QL.placeItem(state, item.id, Number(button.dataset.quadrant))) commit(); }
+      if (button.hasAttribute("data-add-child")) { addingChildFor = item.id; editingId = null; render(); }
+      else if (button.dataset.quadrant) { if (QL.placeItem(state, item.id, Number(button.dataset.quadrant))) commit(); }
       else if (button.hasAttribute("data-delete")) remove([item.id]);
       else if (button.hasAttribute("data-rename-menu")) { editingId = item.id; render(); }
       else move([item.id], button.dataset.move || null);
@@ -794,6 +885,14 @@ if (typeof module !== "undefined") module.exports = QL;
       e.preventDefault();
       addFromInput();
     }
+    if (e.target.classList.contains("child-input")) {
+      if (e.key === "Enter" && !e.isComposing) {
+        e.preventDefault();
+        // 足したあとも入力欄を開いたままにして、続けて書けるようにする
+        if (QL.addChildren(state, e.target.dataset.parent, e.target.value).length) commit();
+      }
+      if (e.key === "Escape") { addingChildFor = null; render(); }
+    }
     if (e.target.classList.contains("title-input")) {
       if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); e.target.blur(); }
       if (e.key === "Escape") { editingId = null; render(); }
@@ -801,6 +900,14 @@ if (typeof module !== "undefined") module.exports = QL;
   });
 
   main.addEventListener("focusout", (e) => {
+    if (rendering) return;
+    if (e.target.classList.contains("child-input")) {
+      // 書きかけのまま外へ出たら、足してから閉じる
+      QL.addChildren(state, e.target.dataset.parent, e.target.value);
+      addingChildFor = null;
+      commit();
+      return;
+    }
     if (!e.target.classList.contains("title-input")) return;
     QL.rename(state, e.target.dataset.edit, e.target.value);
     editingId = null;
@@ -847,7 +954,8 @@ if (typeof module !== "undefined") module.exports = QL;
 
   /** マウスの高さから、どの行の前に入れるかを決める(null = 末尾) */
   function dropBefore(zone, y) {
-    const rows = [...zone.querySelectorAll(".row:not(.dragging)")];
+    // 子は親と一緒に動くので、親のない行だけを目印にする
+    const rows = [...zone.querySelectorAll(".row.top:not(.dragging)")];
     return rows.find((row) => {
       const rect = row.getBoundingClientRect();
       return y < rect.top + rect.height / 2;
