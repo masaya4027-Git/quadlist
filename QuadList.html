@@ -57,7 +57,22 @@ input, textarea { font: inherit; color: inherit; }
 .inbox-icon { width: 18px; text-align: center; flex: none; font-size: 13px; }
 .add-project { border: 1px dashed var(--line); background: transparent; border-radius: 8px; padding: 8px; color: var(--sub); }
 .add-project:hover { background: var(--hover); }
-.note { margin-top: auto; font-size: 11px; color: var(--sub); line-height: 1.5; padding: 0 4px; }
+.trash {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 8px; border-radius: 8px;
+  border: 1px dashed var(--line); background: transparent; color: var(--sub);
+}
+.trash:hover { background: var(--hover); }
+.trash.active { background: var(--panel); border-style: solid; color: var(--text); font-weight: 600; }
+.trash .count { margin-left: auto; color: var(--sub); font-variant-numeric: tabular-nums; font-weight: 400; }
+.trash.drop-target { background: rgba(255, 59, 48, 0.15); border: 1px solid var(--danger); color: var(--danger); }
+/* 書き出し・読み込み(左下) */
+.backup { margin-top: auto; padding: 0 4px; }
+.backup-buttons { display: flex; gap: 6px; }
+.backup-buttons button { flex: 1; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 0; font-size: 13px; }
+.backup-buttons button:hover { background: var(--hover); }
+.backup-status { font-size: 11px; color: var(--sub); margin: 6px 0 0; }
+.backup-status.stale { color: var(--c-orange); font-weight: 600; }
+.note { font-size: 11px; color: var(--sub); line-height: 1.5; padding: 0 4px; }
 
 /* 右の中身 */
 .main { overflow-y: auto; padding: 24px 32px 96px; }
@@ -94,19 +109,26 @@ input, textarea { font: inherit; color: inherit; }
 .check:disabled { border-style: dotted; opacity: 0.5; cursor: not-allowed; }
 /* 子: 親の下に字下げして並べる。親との間の線は出さない */
 .row.top:has(+ .row.child) { border-bottom: 0; }
-.row.child { padding-left: 40px; border-bottom: 0; padding-top: 4px; padding-bottom: 4px; }
+.row.child { padding-left: 60px; border-bottom: 0; padding-top: 4px; padding-bottom: 4px; }
 .row.child + .row.top { border-top: 1px solid var(--line); }
 .row.child .check { width: 18px; height: 18px; }
 .row.child .check.done { font-size: 11px; }
 .row.child .title { font-size: 14px; }
+/* 子を追加(行の左。ふだんは薄く、行にマウスを乗せると濃くする) */
+.add-child-btn {
+  width: 22px; height: 22px; flex: none; border: 0; border-radius: 6px; padding: 0; background: transparent;
+  color: var(--accent); font-size: 16px; font-weight: 700; line-height: 22px; opacity: 0.3;
+}
+button.add-child-btn:hover { background: var(--hover); }
+.row:hover button.add-child-btn, button.add-child-btn:focus-visible { opacity: 1; }
+.row.child.adding { padding-left: 84px; }
+.done-at { font-size: 12px; color: var(--sub); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .progress { font-size: 12px; color: var(--sub); font-variant-numeric: tabular-nums; }
 .child-input { flex: 1; border: 1px solid var(--accent); border-radius: 6px; padding: 4px 8px; background: var(--panel); font-size: 14px; }
 .title { flex: 1; min-width: 0; overflow-wrap: anywhere; cursor: text; }
 .row.done .title { text-decoration: line-through; color: var(--sub); }
 .title-input { flex: 1; border: 1px solid var(--accent); border-radius: 6px; padding: 2px 6px; background: var(--panel); }
 .where { font-size: 12px; color: var(--sub); }
-.row-actions { display: flex; gap: 4px; opacity: 0; }
-.row:hover .row-actions, .row:focus-within .row-actions { opacity: 1; }
 .icon-btn { border: 0; background: transparent; border-radius: 6px; padding: 4px 8px; color: var(--sub); }
 .icon-btn:hover { background: var(--hover); color: var(--text); }
 /* 完了直後は3秒そのまま残し、下の縁に残り時間のバーを出す */
@@ -133,20 +155,19 @@ input, textarea { font: inherit; color: inherit; }
 .row.insert-before { box-shadow: inset 0 3px 0 var(--accent); }
 .zone-list.insert-end { box-shadow: inset 0 -3px 0 var(--accent); }
 
+/* ゴミ箱の中 */
+.row.trashed { align-items: flex-start; }
+.trash-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.trash-meta, .trash-kids { font-size: 12px; color: var(--sub); }
+.trash-kids { overflow-wrap: anywhere; }
+.restore-btn { flex: none; border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 4px 10px; font-size: 13px; }
+.restore-btn:hover { background: var(--hover); }
+.header .edit.danger { color: var(--danger); }
+
 details.done-section { margin-top: 16px; }
 details.done-section summary { cursor: pointer; color: var(--sub); font-weight: 600; padding: 8px 4px; }
 .done-actions { padding: 8px 12px; }
 .text-btn { border: 0; background: transparent; color: var(--danger); padding: 4px 0; }
-
-/* メニュー */
-.menu {
-  position: fixed; z-index: 20; background: var(--panel); border-radius: 10px; box-shadow: var(--shadow);
-  padding: 6px; min-width: 220px; border: 1px solid var(--line);
-}
-.menu .menu-label { font-size: 11px; color: var(--sub); padding: 6px 10px 2px; }
-.menu button { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: transparent; text-align: left; padding: 8px 10px; border-radius: 6px; }
-.menu button:hover { background: var(--hover); }
-.menu .danger { color: var(--danger); }
 
 /* 取り消し */
 .toast {
@@ -190,7 +211,18 @@ dialog h2 { margin: 0 0 16px; font-size: 18px; }
     <div class="brand">QuadList</div>
     <nav id="nav"></nav>
     <button class="add-project" id="add-project" type="button">＋ 新しいプロジェクト</button>
-    <p class="note">データはこのブラウザの中だけに保存されます。機密情報は書かないでください。</p>
+    <button class="trash" id="trash" type="button" title="クリックで中を見る。やることをここへドラッグするとゴミ箱へ入れる">
+      <span class="inbox-icon">🗑</span><span>ゴミ箱</span><span class="count" id="trash-count"></span>
+    </button>
+    <div class="backup">
+      <div class="backup-buttons">
+        <button type="button" id="export">書き出す</button>
+        <button type="button" id="import">読み込む</button>
+      </div>
+      <input type="file" id="import-file" accept=".json,application/json" hidden>
+      <p class="backup-status" id="backup-status"></p>
+    </div>
+    <p class="note">入力したやることは、このパソコンのこのブラウザの中だけに保存され、外へは送られません。機密情報は書かないでください。</p>
   </aside>
   <main class="main" id="main"></main>
 </div>
@@ -275,6 +307,8 @@ const QL = (() => {
       doneAt: Number.isFinite(it.doneAt) ? it.doneAt : null,
       createdAt: Number.isFinite(it.createdAt) ? it.createdAt : Date.now(),
       placedAt: Number.isFinite(it.placedAt) ? it.placedAt : Date.now(),
+      // ゴミ箱に入れた時刻(null = ゴミ箱に入っていない)
+      deletedAt: Number.isFinite(it.deletedAt) ? it.deletedAt : null,
     }));
     // 親子は1段だけ。親が見つからない子は、見えなくならないように親のない項目にする。子は親と同じプロジェクトに置く
     const tops = new Map(state.items.filter((it) => it.parentId == null).map((it) => [it.id, it]));
@@ -285,6 +319,32 @@ const QL = (() => {
       else it.parentId = null;
     }
     return state;
+  }
+
+  // MARK: 書き出し・読み込み(ブラウザのデータが消えたとき・PC を替えたときの備え)
+
+  const EXPORT_APP = "QuadList";
+
+  /** 書き出す中身(JSON の文字列) */
+  function exportJSON(state, now = Date.now()) {
+    return JSON.stringify({
+      app: EXPORT_APP, version: state.version, exportedAt: new Date(now).toISOString(),
+      projects: state.projects, items: state.items,
+    }, null, 2);
+  }
+
+  /** 書き出したファイルを読む。QuadList のファイルでなければ、理由つきでエラーにする */
+  function parseImport(text) {
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error("ファイルを読めませんでした(JSON ではありません)");
+    }
+    if (data?.app !== EXPORT_APP || !Array.isArray(data.projects) || !Array.isArray(data.items)) {
+      throw new Error("QuadList で書き出したファイルではありません");
+    }
+    return normalize(data);
   }
 
   // MARK: 並び順
@@ -304,9 +364,14 @@ const QL = (() => {
     return 0;
   }
 
-  /** 親のない項目(子は親の下に出す) */
+  /** ゴミ箱に入っていない */
+  function isAlive(item) {
+    return item.deletedAt == null;
+  }
+
+  /** 親のない項目(子は親の下に出す)。ゴミ箱の中は除く */
   function topItems(state, projectId) {
-    return state.items.filter((it) => it.parentId == null && it.projectId === projectId);
+    return state.items.filter((it) => isAlive(it) && it.parentId == null && it.projectId === projectId);
   }
 
   function openItems(state, projectId) {
@@ -340,7 +405,7 @@ const QL = (() => {
       const item = {
         id: newId(), title, projectId, parentId: null, quadrant: Quadrant.unsorted,
         sortOrder: appendOrder(state, projectId, Quadrant.unsorted),
-        done: false, doneAt: null, createdAt: now, placedAt: now,
+        done: false, doneAt: null, createdAt: now, placedAt: now, deletedAt: null,
       };
       state.items.push(item);
       added.push(item);
@@ -352,8 +417,9 @@ const QL = (() => {
     return state.items.find((it) => it.id === id);
   }
 
+  /** 子(ゴミ箱の中は除く) */
   function children(state, parentId) {
-    return state.items.filter((it) => it.parentId === parentId)
+    return state.items.filter((it) => isAlive(it) && it.parentId === parentId)
       .sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt - b.createdAt);
   }
 
@@ -378,10 +444,12 @@ const QL = (() => {
       // 未完了に戻した親は、マスの末尾に置き直す
       item.sortOrder = appendOrder(state, item.projectId, item.quadrant);
     }
-    if (!done && item.parentId != null) {
-      // 子を未完了に戻したら、完了にしていた親も戻す(子が残っている親は完了にしない)
+    if (item.parentId != null) {
       const parent = findItem(state, item.parentId);
-      if (parent?.done) setDone(state, parent.id, false, now);
+      // 子を未完了に戻したら、完了にしていた親も戻す(子が残っている親は完了にしない)
+      if (!done && parent?.done) setDone(state, parent.id, false, now);
+      // 子がすべて終わったら、親も完了にする
+      if (done && parent && !parent.done && canComplete(state, parent)) setDone(state, parent.id, true, now);
     }
     return true;
   }
@@ -396,7 +464,7 @@ const QL = (() => {
       const item = {
         id: newId(), title, projectId: parent.projectId, parentId, quadrant: Quadrant.unsorted,
         sortOrder: orderBetween(list.length ? list[list.length - 1].sortOrder : null, null),
-        done: false, doneAt: null, createdAt: now, placedAt: now,
+        done: false, doneAt: null, createdAt: now, placedAt: now, deletedAt: null,
       };
       state.items.push(item);
       added.push(item);
@@ -427,7 +495,84 @@ const QL = (() => {
     return true;
   }
 
-  /** 削除(子も一緒に)。取り消し用に、消した項目の写しを返す */
+  // MARK: ゴミ箱(削除した項目は、ゴミ箱を空にするまで残す)
+
+  /** ゴミ箱へ入れる(子も一緒に)。入れた項目の id を返す(すぐの取り消し用) */
+  function trashItems(state, ids, now = Date.now()) {
+    const targets = new Set();
+    for (const id of ids) {
+      const item = findItem(state, id);
+      if (!item || !isAlive(item)) continue;
+      targets.add(item.id);
+      for (const child of children(state, item.id)) targets.add(child.id);
+    }
+    for (const id of targets) findItem(state, id).deletedAt = now;
+    return [...targets];
+  }
+
+  /** ゴミ箱へ入れた直後の取り消し(元の位置のまま戻す) */
+  function undoTrash(state, ids) {
+    for (const id of ids) {
+      const item = findItem(state, id);
+      if (item) item.deletedAt = null;
+    }
+  }
+
+  /** ゴミ箱の一覧。親と一緒に入れた子は親にまとめ、新しく入れた順に並べる */
+  function trashedItems(state) {
+    return state.items.filter((it) => {
+      if (isAlive(it)) return false;
+      const parent = it.parentId == null ? null : findItem(state, it.parentId);
+      return !parent || parent.deletedAt !== it.deletedAt;
+    }).sort((a, b) => b.deletedAt - a.deletedAt);
+  }
+
+  /** 一緒にゴミ箱へ入れた子 */
+  function trashedChildren(state, item) {
+    return state.items.filter((it) => it.parentId === item.id && it.deletedAt != null && it.deletedAt === item.deletedAt);
+  }
+
+  /**
+   * ゴミ箱から元の場所へ戻す(一緒に入れた子も)。マスの末尾に入る。
+   * プロジェクトが消えていたら すべてのやること へ。親がいない子は、親の場所に1つの項目として戻す
+   */
+  function restoreFromTrash(state, id) {
+    const item = findItem(state, id);
+    if (!item || isAlive(item)) return false;
+    const kids = trashedChildren(state, item);
+    const projectIds = new Set(state.projects.map((p) => p.id));
+    if (item.parentId != null) {
+      const parent = findItem(state, item.parentId);
+      if (parent && isAlive(parent)) {
+        item.projectId = parent.projectId;
+        // 未完了の子が戻ったら、完了にしていた親も戻す(子が残っている親は完了にしない)
+        if (!item.done && parent.done) setDone(state, parent.id, false);
+      } else {
+        item.parentId = null;
+        item.quadrant = Quadrant.unsorted;
+      }
+    }
+    if (item.projectId != null && !projectIds.has(item.projectId)) item.projectId = null;
+    if (item.parentId == null) {
+      if (item.projectId == null) item.quadrant = Quadrant.unsorted;
+      item.sortOrder = appendOrder(state, item.projectId, item.quadrant);
+    }
+    item.deletedAt = null;
+    for (const child of kids) {
+      child.deletedAt = null;
+      child.projectId = item.projectId;
+    }
+    return true;
+  }
+
+  /** ゴミ箱を空にする(元に戻せない)。消した件数を返す */
+  function emptyTrash(state) {
+    const before = state.items.length;
+    state.items = state.items.filter(isAlive);
+    return before - state.items.length;
+  }
+
+  /** 完全に削除(子も一緒に)。取り消し用に、消した項目の写しを返す */
   function deleteItems(state, ids) {
     const targets = new Set(ids);
     for (const it of state.items) if (it.parentId && targets.has(it.parentId)) targets.add(it.id);
@@ -510,11 +655,12 @@ const QL = (() => {
   }
 
   return {
-    STORAGE_KEY, Quadrant, COLORS, emptyState, load, save, normalize,
+    STORAGE_KEY, Quadrant, COLORS, emptyState, load, save, normalize, exportJSON, parseImport,
     displayOrder, orderBetween, topItems, openItems, doneItems, itemsIn, appendOrder,
     QUADRANT_NAMES, AXES,
     splitTitles, addItems, findItem, children, rename, canComplete, setDone, addChildren, childProgress,
-    placeItem, deleteItems, restoreItems,
+    placeItem, deleteItems, restoreItems, isAlive,
+    trashItems, undoTrash, trashedItems, trashedChildren, restoreFromTrash, emptyTrash,
     moveToProject, undoMove, sortedProjects, createProject, updateProject, deleteProject, openCount,
   };
 })();
@@ -523,8 +669,8 @@ if (typeof module !== "undefined") module.exports = QL;
 
 </script>
 <script>
-// QuadList ブラウザ版の画面(W1: 溜める・プロジェクト・振り分け、W2: プロジェクトの中の4マス)
-// 左: すべてのやること とプロジェクトの一覧(ドラッグで落とす先)。右: 選んだものの中身
+// QuadList ブラウザ版の画面(溜める・プロジェクト・振り分け・4マス・親子・書き出し)
+// 左: すべてのやること・プロジェクトの一覧・ゴミ箱(ドラッグで落とす先)。右: 選んだものの中身
 "use strict";
 
 (() => {
@@ -534,6 +680,8 @@ if (typeof module !== "undefined") module.exports = QL;
   let state = QL.load();
   /** 開いているもの。null = すべてのやること、文字列 = プロジェクトの id */
   let selected = null;
+  /** ゴミ箱の中を見ているか(見ている間は selected より優先) */
+  let showingTrash = false;
   /** 完了直後で残している項目の id */
   const lingering = new Set();
   let editingId = null;
@@ -565,6 +713,10 @@ if (typeof module !== "undefined") module.exports = QL;
     return projectId == null ? "すべてのやること" : projectById(projectId)?.name ?? "";
   }
 
+  /** 追加のキー(Mac は ⌘+Enter、Windows などは Ctrl+Enter) */
+  const IS_MAC = /mac|iphone|ipad/i.test(navigator.userAgentData?.platform ?? navigator.platform ?? "");
+  const ADD_KEY = IS_MAC ? "⌘+Enter" : "Ctrl+Enter";
+
   // MARK: 描画
 
   function render() {
@@ -574,12 +726,13 @@ if (typeof module !== "undefined") module.exports = QL;
     rendering = true;
     renderNav();
     renderMain();
+    renderBackupStatus();
     rendering = false;
   }
 
   function renderNav() {
     const entry = (id, label, icon, count) => `
-      <button class="nav-item${selected === id ? " active" : ""}" data-nav="${id ?? ""}" type="button">
+      <button class="nav-item${!showingTrash && selected === id ? " active" : ""}" data-nav="${id ?? ""}" type="button">
         ${icon}<span>${esc(label)}</span><span class="count">${count}</span>
       </button>`;
     nav.innerHTML =
@@ -588,9 +741,14 @@ if (typeof module !== "undefined") module.exports = QL;
       (QL.sortedProjects(state).map((p) =>
         entry(p.id, p.name, `<span class="dot" style="background: var(--c-${p.color})"></span>`, QL.openCount(state, p.id))
       ).join("") || `<div class="hint" style="padding: 4px 8px">まだありません</div>`);
+    const trash = $("trash");
+    trash.classList.toggle("active", showingTrash);
+    const count = QL.trashedItems(state).length;
+    $("trash-count").textContent = count || "";
   }
 
   function renderMain() {
+    if (showingTrash) { renderTrash(); return; }
     const project = selected == null ? null : projectById(selected);
     const open = QL.displayOrder(QL.topItems(state, selected).filter((it) => !it.done || lingering.has(it.id)));
     const done = QL.doneItems(state, selected).filter((it) => !lingering.has(it.id));
@@ -601,8 +759,8 @@ if (typeof module !== "undefined") module.exports = QL;
         ${project ? `<button class="edit" id="edit-project" type="button">プロジェクトを編集</button>` : ""}
       </div>
       <form class="add-form" id="add-form">
-        <textarea id="add-text" rows="1" placeholder="やることを追加(Enter で追加 / Shift+Enter で改行)" aria-label="やることを追加"></textarea>
-        <button type="submit">追加</button>
+        <textarea id="add-text" rows="1" placeholder="やることを追加(${ADD_KEY} で追加 / Enter で改行)" aria-label="やることを追加"></textarea>
+        <button type="submit" title="${ADD_KEY}">追加</button>
       </form>
       <p class="hint">「、」「,」または改行で区切ると、まとめて追加できます。${project
         ? "追加した項目は未分類に入ります。マスへドラッグして仕分けます。"
@@ -615,7 +773,7 @@ if (typeof module !== "undefined") module.exports = QL;
         <details class="done-section">
           <summary>完了済み (${done.length})</summary>
           <div class="card">${done.map(rowHTML).join("")}
-            <div class="done-actions"><button class="text-btn" data-action="clear-done" type="button">完了済みを削除</button></div>
+            <div class="done-actions"><button class="text-btn" data-action="clear-done" type="button">完了済みをゴミ箱へ</button></div>
           </div>
         </details>` : ""}`;
     if (editingId) {
@@ -625,6 +783,37 @@ if (typeof module !== "undefined") module.exports = QL;
     } else if (addingChildFor) {
       main.querySelector(".child-input")?.focus();
     }
+  }
+
+  /** ゴミ箱の中: 新しく入れた順。元に戻す・まとめて完全に削除 */
+  function renderTrash() {
+    const items = QL.trashedItems(state);
+    const where = (item) => {
+      const parent = item.parentId == null ? null : QL.findItem(state, item.parentId);
+      if (parent) return `「${parent.title}」の子`;
+      return item.projectId != null && !projectById(item.projectId) ? "削除したプロジェクト" : nameOf(item.projectId);
+    };
+    const row = (item) => {
+      const kids = QL.trashedChildren(state, item);
+      return `
+        <div class="row trashed${item.done ? " done" : ""}" data-trash-id="${item.id}">
+          <div class="trash-body">
+            <span class="title">${esc(item.title)}</span>
+            <span class="trash-meta">${esc(where(item))}${kids.length ? `・子${kids.length}件` : ""}・${doneLabel(item.deletedAt)} 削除</span>
+            ${kids.length ? `<span class="trash-kids">${kids.map((k) => esc(k.title)).join("、")}</span>` : ""}
+          </div>
+          <button class="restore-btn" data-action="restore" type="button">元に戻す</button>
+        </div>`;
+    };
+    main.innerHTML = `
+      <div class="header">
+        <h1>🗑 ゴミ箱</h1>
+        ${items.length ? `<button class="edit danger" data-action="empty-trash" type="button">ゴミ箱を空にする</button>` : ""}
+      </div>
+      <p class="hint">削除したやることは、ゴミ箱を空にするまでここに残ります。「元に戻す」で元の場所へ戻せます。</p>
+      <div class="card">
+        ${items.length ? items.map(row).join("") : `<div class="empty">ゴミ箱は空です</div>`}
+      </div>`;
   }
 
   /** プロジェクトの中: 未分類 + 4マス(左上 すぐやる、右上 任せる、左下 計画する、右下 やらない) */
@@ -653,34 +842,47 @@ if (typeof module !== "undefined") module.exports = QL;
       </div>`;
   }
 
+  /** 完了した日時(今日なら時刻だけ、今年なら月日と時刻) */
+  function doneLabel(time) {
+    const d = new Date(time);
+    const now = new Date();
+    const hm = d.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+    if (d.toDateString() === now.toDateString()) return `今日 ${hm}`;
+    const md = `${d.getMonth() + 1}/${d.getDate()}`;
+    return d.getFullYear() === now.getFullYear() ? `${md} ${hm}` : `${d.getFullYear()}/${md} ${hm}`;
+  }
+
   /** 1行。親のない項目は、未完了なら下に子と「子を追加」の入力欄を続ける */
   function rowHTML(item) {
     const isLinger = lingering.has(item.id);
     const isChild = item.parentId != null;
-    const draggable = !isChild && !item.done;
+    // どの行もドラッグできる(ゴミ箱へ落とすと削除)。名前の変更中だけは文字を選べるように止める
+    const draggable = editingId !== item.id;
+    const canAddChild = !isChild && !item.done;
     // 子が残っている親は完了にできない
     const blocked = !item.done && !QL.canComplete(state, item);
     const progress = isChild ? "" : QL.childProgress(state, item.id);
     const title = editingId === item.id
       ? `<input class="title-input" data-edit="${item.id}" value="${esc(item.title)}" aria-label="名前を変更">`
-      : `<span class="title" data-rename="${item.id}">${esc(item.title)}</span>`;
+      : `<span class="title" data-rename="${item.id}" title="${item.done ? "" : "クリックで名前を変更"}">${esc(item.title)}</span>`;
     const row = `
       <div class="row ${isChild ? "child" : "top"}${item.done ? " done" : ""}" draggable="${draggable}" data-id="${item.id}">
-        <span class="grip" aria-hidden="true">${draggable ? "⋮⋮" : ""}</span>
+        <span class="grip" aria-hidden="true">⋮⋮</span>
+        ${isChild ? "" : canAddChild
+          ? `<button class="add-child-btn" data-action="add-child" type="button" aria-label="子を追加" title="子を追加">＋</button>`
+          : `<span class="add-child-btn" aria-hidden="true"></span>`}
         <button class="check${item.done ? " done" : ""}" data-action="toggle" type="button"${blocked ? " disabled" : ""}
           aria-label="${item.done ? "未完了に戻す" : "完了にする"}"
           title="${blocked ? "子がすべて終わると完了にできます" : ""}">${item.done ? "✓" : ""}</button>
         ${title}
         ${progress ? `<span class="progress">${progress}</span>` : ""}
-        <span class="row-actions">
-          <button class="icon-btn" data-action="menu" type="button" aria-label="メニュー">⋯</button>
-        </span>
+        ${item.done && item.doneAt ? `<span class="done-at" title="完了した日時">${doneLabel(item.doneAt)} 完了</span>` : ""}
         ${isLinger ? `<span class="linger-bar"></span>` : ""}
       </div>`;
-    if (isChild || item.done) return row;
-    const adding = addingChildFor === item.id ? `
+    // 完了直後に残している親は、子も一緒に見せる
+    if (isChild || (item.done && !isLinger)) return row;
+    const adding = addingChildFor === item.id && !item.done ? `
       <div class="row child adding">
-        <span class="grip"></span>
         <input class="child-input" data-parent="${item.id}" placeholder="子を追加(Enter で追加 / Esc で閉じる)" aria-label="子を追加">
       </div>` : "";
     return row + QL.children(state, item.id).map(rowHTML).join("") + adding;
@@ -701,8 +903,10 @@ if (typeof module !== "undefined") module.exports = QL;
     if (!item) return;
     if (item.parentId != null) {
       // 子は消さずに、親の下で線を引いたまま残す。戻したら親も未完了に戻る
+      const parent = QL.findItem(state, item.parentId);
       QL.setDone(state, id, !item.done);
-      if (!item.done) lingering.delete(item.parentId);
+      if (!item.done) lingering.delete(parent.id);
+      else if (parent.done) linger(parent.id);  // 最後の子で親も完了 → 親も3秒残す
       commit();
       return;
     }
@@ -720,8 +924,13 @@ if (typeof module !== "undefined") module.exports = QL;
       return;
     }
     if (!QL.setDone(state, id, true)) return;
-    lingering.add(id);
+    linger(id);
     commit();
+  }
+
+  /** 完了直後の項目を3秒その場に残す */
+  function linger(id) {
+    lingering.add(id);
     setTimeout(() => {
       if (lingering.delete(id)) render();
     }, LINGER_MS);
@@ -735,14 +944,21 @@ if (typeof module !== "undefined") module.exports = QL;
     showUndo(`${label}を${nameOf(projectId)}へ移しました`, () => QL.undoMove(state, before));
   }
 
+  /** ゴミ箱へ入れる(子も一緒に)。5秒は「取り消す」で元の位置に戻せる */
   function remove(ids) {
-    const removed = QL.deleteItems(state, ids);
-    if (!removed.length) return;
+    const trashed = QL.trashItems(state, ids);
+    if (!trashed.length) return;
     commit();
-    const top = removed.filter((it) => it.parentId == null);
-    const shown = top.length ? top : removed;  // 子だけを消したときは子の名前を出す
-    const label = shown.length === 1 ? `「${shown[0].title}」` : `${shown.length}件`;
-    showUndo(`${label}を削除しました`, () => QL.restoreItems(state, removed));
+    const label = ids.length === 1 ? `「${QL.findItem(state, ids[0]).title}」` : `${ids.length}件`;
+    showUndo(`${label}をゴミ箱へ入れました`, () => QL.undoTrash(state, trashed));
+  }
+
+  function restore(id) {
+    const item = QL.findItem(state, id);
+    if (!item || !QL.restoreFromTrash(state, id)) return;
+    commit();
+    const back = item.parentId != null ? `「${QL.findItem(state, item.parentId).title}」の子` : nameOf(item.projectId);
+    showUndo(`「${item.title}」を${back}へ戻しました`, () => QL.trashItems(state, [id]));
   }
 
   // MARK: 取り消し
@@ -759,47 +975,6 @@ if (typeof module !== "undefined") module.exports = QL;
     };
     clearTimeout(undoTimer);
     undoTimer = setTimeout(() => { toast.hidden = true; }, UNDO_MS);
-  }
-
-  // MARK: メニュー(移動・戻す・削除)
-
-  function closeMenu() {
-    document.querySelector(".menu")?.remove();
-  }
-
-  function openMenu(item, anchor) {
-    closeMenu();
-    const menu = document.createElement("div");
-    menu.className = "menu";
-    // 子はプロジェクトやマスを持たない(親と一緒に動く)ので、名前の変更と削除だけ
-    const isTop = item.parentId == null;
-    const targets = isTop ? QL.sortedProjects(state).filter((p) => p.id !== item.projectId) : [];
-    // プロジェクトの中では、ドラッグしなくてもマスを選べるようにする
-    const quadrants = !isTop || item.projectId == null || item.done ? [] :
-      [1, 3, 2, 4, 0].filter((q) => q !== item.quadrant);
-    menu.innerHTML = `
-      ${isTop && !item.done ? `<button type="button" data-add-child>＋ 子を追加</button>` : ""}
-      ${quadrants.length ? `<div class="menu-label">マスへ移す</div>` : ""}
-      ${quadrants.map((q) => `<button type="button" data-quadrant="${q}">${QL.QUADRANT_NAMES[q]}</button>`).join("")}
-      ${targets.length ? `<div class="menu-label">プロジェクトへ移す</div>` : ""}
-      ${targets.map((p) => `<button type="button" data-move="${p.id}"><span class="dot" style="background: var(--c-${p.color})"></span>${esc(p.name)}</button>`).join("")}
-      ${isTop && item.projectId != null ? `<button type="button" data-move="">📥 すべてのやることへ戻す</button>` : ""}
-      <button type="button" data-rename-menu>名前を変更</button>
-      <button type="button" class="danger" data-delete>削除</button>`;
-    document.body.append(menu);
-    const rect = anchor.getBoundingClientRect();
-    menu.style.top = `${Math.min(rect.bottom + 4, innerHeight - menu.offsetHeight - 8)}px`;
-    menu.style.left = `${Math.max(8, rect.right - menu.offsetWidth)}px`;
-    menu.addEventListener("click", (e) => {
-      const button = e.target.closest("button");
-      if (!button) return;
-      closeMenu();
-      if (button.hasAttribute("data-add-child")) { addingChildFor = item.id; editingId = null; render(); }
-      else if (button.dataset.quadrant) { if (QL.placeItem(state, item.id, Number(button.dataset.quadrant))) commit(); }
-      else if (button.hasAttribute("data-delete")) remove([item.id]);
-      else if (button.hasAttribute("data-rename-menu")) { editingId = item.id; render(); }
-      else move([item.id], button.dataset.move || null);
-    });
   }
 
   // MARK: プロジェクトの作成・編集
@@ -839,7 +1014,7 @@ if (typeof module !== "undefined") module.exports = QL;
       QL.updateProject(state, dialogProjectId, { name, color: dialogColor });
     } else {
       const project = QL.createProject(state, name, dialogColor);
-      if (project) selected = project.id;
+      if (project) { selected = project.id; showingTrash = false; }
     }
     commit();
   });
@@ -855,12 +1030,70 @@ if (typeof module !== "undefined") module.exports = QL;
   });
   $("add-project").addEventListener("click", () => openProjectDialog(null));
 
+  // MARK: 書き出し・読み込み
+
+  const EXPORTED_KEY = "quadlist-web-exported-at";
+  const STALE_DAYS = 7;  // これより前の書き出しは、目立たせてこまめな書き出しを促す
+
+  function exportedAt() {
+    try { return Number(localStorage.getItem(EXPORTED_KEY)) || null; } catch { return null; }
+  }
+
+  function renderBackupStatus() {
+    const status = $("backup-status");
+    const at = exportedAt();
+    const days = at == null ? Infinity : (Date.now() - at) / 86400000;
+    status.textContent = at == null ? "まだ書き出していません"
+      : `最後の書き出し: ${new Date(at).toLocaleDateString("ja-JP", { month: "long", day: "numeric" })}`;
+    status.classList.toggle("stale", state.items.length > 0 && days > STALE_DAYS);
+  }
+
+  $("export").addEventListener("click", () => {
+    const now = Date.now();
+    const blob = new Blob([QL.exportJSON(state, now)], { type: "application/json" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    const d = new Date(now);
+    const pad = (n) => String(n).padStart(2, "0");
+    link.download = `quadlist-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    try { localStorage.setItem(EXPORTED_KEY, String(now)); } catch { /* 記録できなくても書き出しはできている */ }
+    renderBackupStatus();
+  });
+
+  $("import").addEventListener("click", () => $("import-file").click());
+  $("import-file").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";  // 同じファイルをもう一度選んでも反応するように
+    if (!file) return;
+    let imported;
+    try {
+      imported = QL.parseImport(await file.text());
+    } catch (error) {
+      alert(error.message);
+      return;
+    }
+    const count = (s) => `プロジェクト${s.projects.length}件・やること${s.items.filter((it) => it.parentId == null).length}件`;
+    if (!confirm(`今のデータ(${count(state)})を、ファイルの中身(${count(imported)})に置き換えます。\n今のデータは消えます。続けますか？`)) return;
+    const previous = state;
+    state = imported;
+    selected = null;
+    showingTrash = false;
+    editingId = null;
+    addingChildFor = null;
+    lingering.clear();
+    commit();
+    showUndo(`「${file.name}」を読み込みました`, () => { state = previous; });
+  });
+
   // MARK: イベント
 
   nav.addEventListener("click", (e) => {
     const item = e.target.closest("[data-nav]");
     if (!item) return;
     selected = item.dataset.nav || null;
+    showingTrash = false;
     editingId = null;
     render();
   });
@@ -881,7 +1114,7 @@ if (typeof module !== "undefined") module.exports = QL;
   });
 
   main.addEventListener("keydown", (e) => {
-    if (e.target.id === "add-text" && e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    if (e.target.id === "add-text" && e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.isComposing) {
       e.preventDefault();
       addFromInput();
     }
@@ -919,15 +1152,25 @@ if (typeof module !== "undefined") module.exports = QL;
     const row = e.target.closest(".row");
     const action = e.target.closest("[data-action]")?.dataset.action;
     if (action === "clear-done") {
-      const ids = QL.doneItems(state, selected).map((it) => it.id);
-      if (confirm(`完了済みの${ids.length}件を削除しますか？`)) remove(ids);
+      remove(QL.doneItems(state, selected).map((it) => it.id));
+      return;
+    }
+    if (action === "empty-trash") {
+      const count = QL.trashedItems(state).length;
+      if (!confirm(`ゴミ箱の${count}件を完全に削除します。\n元に戻せません。続けますか？`)) return;
+      QL.emptyTrash(state);
+      commit();
+      return;
+    }
+    if (action === "restore") {
+      restore(e.target.closest("[data-trash-id]").dataset.trashId);
       return;
     }
     if (!row) return;
     const item = QL.findItem(state, row.dataset.id);
     if (!item) return;
     if (action === "toggle") toggle(item.id);
-    else if (action === "menu") openMenu(item, e.target.closest("button"));
+    else if (action === "add-child") { addingChildFor = item.id; editingId = null; render(); }
     else if (e.target.closest("[data-rename]") && !item.done) { editingId = item.id; render(); }
   });
 
@@ -945,6 +1188,12 @@ if (typeof module !== "undefined") module.exports = QL;
     clearDropMarks();
     document.querySelectorAll(".dragging, .drop-target").forEach((el) => el.classList.remove("dragging", "drop-target"));
   });
+
+  /** マスやプロジェクトへ動かせるのは、親のない未完了の項目だけ(子と完了済みは、ゴミ箱へだけ落とせる) */
+  function draggingMovable() {
+    const item = draggingId && QL.findItem(state, draggingId);
+    return Boolean(item && item.parentId == null && !item.done);
+  }
 
   // ドラッグ: プロジェクトの中では、マスへ落とすと仕分け、マスの中の位置で並べ替え
   function clearDropMarks() {
@@ -964,7 +1213,7 @@ if (typeof module !== "undefined") module.exports = QL;
 
   main.addEventListener("dragover", (e) => {
     const zone = e.target.closest("[data-quadrant]");
-    if (!zone || !draggingId) return;
+    if (!zone || !draggingMovable()) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     const before = dropBefore(zone, e.clientY);
@@ -988,7 +1237,7 @@ if (typeof module !== "undefined") module.exports = QL;
   });
   nav.addEventListener("dragover", (e) => {
     const target = e.target.closest("[data-nav]");
-    if (!target || !draggingId) return;
+    if (!target || !draggingMovable()) return;
     e.preventDefault();
     nav.querySelectorAll(".drop-target").forEach((el) => el !== target && el.classList.remove("drop-target"));
     target.classList.add("drop-target");
@@ -1004,10 +1253,29 @@ if (typeof module !== "undefined") module.exports = QL;
     move([draggingId], target.dataset.nav || null);
   });
 
-  document.addEventListener("click", (e) => {
-    if (!e.target.closest(".menu") && !e.target.closest("[data-action='menu']")) closeMenu();
+  // ゴミ箱: 行を落とすと削除(5秒は取り消せる)
+  const trash = $("trash");
+  trash.addEventListener("click", () => {
+    showingTrash = true;
+    editingId = null;
+    addingChildFor = null;
+    render();
   });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(); });
+  trash.addEventListener("dragover", (e) => {
+    if (!draggingId) return;
+    e.preventDefault();
+    trash.classList.add("drop-target");
+  });
+  trash.addEventListener("dragleave", (e) => {
+    if (!trash.contains(e.relatedTarget)) trash.classList.remove("drop-target");
+  });
+  trash.addEventListener("drop", (e) => {
+    if (!draggingId) return;
+    e.preventDefault();
+    trash.classList.remove("drop-target");
+    lingering.delete(draggingId);
+    remove([draggingId]);
+  });
 
   // 別のタブで開いていても、保存したら揃える
   window.addEventListener("storage", (e) => {
