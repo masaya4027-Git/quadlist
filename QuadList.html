@@ -129,6 +129,14 @@ button.add-child-btn:hover { background: var(--hover); }
 .row:hover button.add-child-btn, button.add-child-btn:focus-visible { opacity: 1; }
 .row.child.adding { padding-left: 84px; }
 .done-at { font-size: 12px; color: var(--sub); white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* 全プロジェクトの鳥瞰図: どのプロジェクトの項目か */
+.project-tag {
+  display: inline-flex; align-items: center; gap: 4px; flex: none; max-width: 45%;
+  border: 0; border-radius: 999px; padding: 2px 8px; background: var(--hover);
+  font-size: 11px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.project-tag:hover { color: var(--text); }
+.project-tag .dot { width: 8px; height: 8px; }
 .progress { font-size: 12px; color: var(--sub); font-variant-numeric: tabular-nums; }
 .child-input { flex: 1; border: 1px solid var(--accent); border-radius: 6px; padding: 4px 8px; background: var(--panel); font-size: 14px; }
 .title { flex: 1; min-width: 0; overflow-wrap: anywhere; cursor: text; }
@@ -151,6 +159,11 @@ button.add-child-btn:hover { background: var(--hover); }
 .zone[data-quadrant="3"] .zone-head span:first-child { color: var(--c-orange); }
 .zone[data-quadrant="2"] .zone-head span:first-child { color: var(--c-blue); }
 .zone[data-quadrant="4"] .zone-head span:first-child { color: var(--c-gray); }
+/* 全プロジェクトの鳥瞰図: マスの名前を出さないので、上の縁の色で位置を見分ける(色はマスの見出しと同じ) */
+.zone.overview[data-quadrant="1"] { box-shadow: inset 0 4px 0 var(--c-red); }
+.zone.overview[data-quadrant="3"] { box-shadow: inset 0 4px 0 var(--c-orange); }
+.zone.overview[data-quadrant="2"] { box-shadow: inset 0 4px 0 var(--c-blue); }
+.zone.overview[data-quadrant="4"] { box-shadow: inset 0 4px 0 var(--c-gray); }
 .zone-list { min-height: 44px; }
 .zone-empty { color: var(--sub); font-size: 13px; padding: 12px; text-align: center; }
 .matrix { display: grid; grid-template-columns: 24px 1fr 1fr; grid-template-rows: auto 1fr 1fr; gap: 10px; }
@@ -666,6 +679,18 @@ const QL = (() => {
     return [...state.projects].sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt - b.createdAt);
   }
 
+  /**
+   * 全プロジェクトの鳥瞰図: すべてのプロジェクトの未完了の項目(親のないもの)。
+   * プロジェクトの並び順でまとめ、その中はマスの中の並び順。keepIds は完了直後で残している項目
+   */
+  function overviewItems(state, keepIds = new Set()) {
+    const rank = new Map(sortedProjects(state).map((p, i) => [p.id, i]));
+    const items = state.items.filter((it) => isAlive(it) && it.parentId == null && rank.has(it.projectId) &&
+      (!it.done || keepIds.has(it.id)));
+    return displayOrder(items).sort((a, b) =>
+      (DISPLAY_RANK[a.quadrant] - DISPLAY_RANK[b.quadrant]) || (rank.get(a.projectId) - rank.get(b.projectId)));
+  }
+
   /** プロジェクトを並べ替える(beforeId の前へ。null なら末尾)。動かしたら true */
   function moveProject(state, id, beforeId = null) {
     const project = state.projects.find((p) => p.id === id);
@@ -716,7 +741,7 @@ const QL = (() => {
     splitTitles, addItems, findItem, children, rename, canComplete, setDone, addChildren, childProgress,
     placeItem, deleteItems, restoreItems, isAlive,
     trashItems, undoTrash, trashedItems, trashedChildren, restoreFromTrash, emptyTrash,
-    moveToProject, undoMove, sortedProjects, moveProject, createProject, updateProject, deleteProject, openCount,
+    moveToProject, undoMove, sortedProjects, moveProject, overviewItems, createProject, updateProject, deleteProject, openCount,
   };
 })();
 
@@ -737,6 +762,8 @@ if (typeof module !== "undefined") module.exports = QL;
   let selected = null;
   /** ゴミ箱の中を見ているか(見ている間は selected より優先) */
   let showingTrash = false;
+  /** 全プロジェクトの鳥瞰図(すべてのプロジェクトを横断)を見ているか */
+  let showingOverview = false;
   /** 完了直後で残している項目の id */
   const lingering = new Set();
   let editingId = null;
@@ -790,12 +817,17 @@ if (typeof module !== "undefined") module.exports = QL;
   function renderNav() {
     // プロジェクトはドラッグで並べ替えられる(すべてのやること は先頭に固定)
     const entry = (id, label, icon, count) => `
-      <button class="nav-item${!showingTrash && selected === id ? " active" : ""}" data-nav="${id ?? ""}" type="button"
+      <button class="nav-item${!showingTrash && !showingOverview && selected === id ? " active" : ""}" data-nav="${id ?? ""}" type="button"
         ${id == null ? "" : `draggable="true" data-project="${id}"`}>
         ${icon}<span>${esc(label)}</span><span class="count">${count}</span>
       </button>`;
     nav.innerHTML =
       entry(null, "すべてのやること", `<span class="inbox-icon">📥</span>`, QL.openCount(state, null)) +
+      `<button class="nav-item${showingOverview ? " active" : ""}" data-view="overview" type="button"
+        title="すべてのプロジェクトのやることを、マスの位置ごとにまとめて見る">
+        <span class="inbox-icon">▦</span><span>全プロジェクトの鳥瞰図</span>
+        <span class="count">${state.projects.reduce((sum, p) => sum + QL.openCount(state, p.id), 0)}</span>
+      </button>` +
       `<div class="nav-section">プロジェクト</div>` +
       (QL.sortedProjects(state).map((p) =>
         entry(p.id, p.name, `<span class="dot" style="background: var(--c-${p.color})"></span>`, QL.openCount(state, p.id))
@@ -808,6 +840,7 @@ if (typeof module !== "undefined") module.exports = QL;
 
   function renderMain() {
     if (showingTrash) { renderTrash(); return; }
+    if (showingOverview) { renderOverview(); return; }
     const project = selected == null ? null : projectById(selected);
     const open = QL.displayOrder(QL.topItems(state, selected).filter((it) => !it.done || lingering.has(it.id)));
     const done = QL.doneItems(state, selected).filter((it) => !lingering.has(it.id));
@@ -835,6 +868,27 @@ if (typeof module !== "undefined") module.exports = QL;
             <div class="done-actions"><button class="text-btn" data-action="clear-done" type="button">完了済みをゴミ箱へ</button></div>
           </div>
         </details>` : ""}`;
+    if (editingId) {
+      const input = main.querySelector(".title-input");
+      input?.focus();
+      input?.select();
+    } else if (addingChildFor) {
+      main.querySelector(".child-input")?.focus();
+    }
+  }
+
+  /**
+   * 全プロジェクトの鳥瞰図: すべてのプロジェクトのやることを、マスの位置ごとにまとめる。
+   * マスの名前と軸の名前はテンプレートごとに違うので出さない(位置と色で見分ける)。各行にプロジェクトを出す
+   */
+  function renderOverview() {
+    const items = QL.overviewItems(state, lingering);
+    main.innerHTML = `
+      <div class="header"><h1>▦ 全プロジェクトの鳥瞰図</h1></div>
+      <p class="hint">すべてのプロジェクトのやることを、マスの位置ごとにまとめています。プロジェクト名を押すと、そのプロジェクトを開きます。
+        ここでも完了・子の追加・マスの移動(ドラッグ)ができます。</p>
+      ${state.projects.length ? matrixHTML(null, items, { overview: true })
+        : `<div class="card"><div class="empty">プロジェクトを作ると、ここにまとめて表示されます</div></div>`}`;
     if (editingId) {
       const input = main.querySelector(".title-input");
       input?.focus();
@@ -876,21 +930,24 @@ if (typeof module !== "undefined") module.exports = QL;
   }
 
   /** プロジェクトの中: 未分類 + 4マス。マスの名前と軸はプロジェクトのテンプレートで決まる */
-  function matrixHTML(project, open) {
+  function matrixHTML(project, open, { overview = false } = {}) {
+    const row = (item) => rowHTML(item, { showProject: overview });
     const zone = (q) => {
       const items = open.filter((it) => it.quadrant === q);
-      const name = QL.quadrantName(project, q);
+      // 鳥瞰図では、テンプレートで変わるマスの名前は出さない(未分類だけは共通なので出す。
+      // すべてのやること と混同しないよう「プロジェクト内の未分類」とする)
+      const name = overview ? (q === 0 ? "プロジェクト内の未分類" : "") : QL.quadrantName(project, q);
       return `
-        <section class="zone${q === 0 ? " unsorted" : ""}" data-quadrant="${q}" aria-label="${name}">
+        <section class="zone${q === 0 ? " unsorted" : ""}${overview ? " overview" : ""}" data-quadrant="${q}" aria-label="${name || `マス${q}`}">
           <h2 class="zone-head"><span>${name}</span><span class="count">${items.length}</span></h2>
           <div class="zone-list">
-            ${items.length ? items.map(rowHTML).join("") : `<div class="zone-empty">${q === 0 ? "追加した項目はここに入ります" : "ここへドラッグ"}</div>`}
+            ${items.length ? items.map(row).join("") : `<div class="zone-empty">${q === 0 ? (overview ? "未分類はありません" : "追加した項目はここに入ります") : "ここへドラッグ"}</div>`}
           </div>
         </section>`;
     };
-    const axes = QL.templateOf(project).axes;
+    const axes = overview ? null : QL.templateOf(project).axes;
     if (!axes) {
-      // 時間軸のように軸のない4区分は、マスの名前だけで並べる
+      // 時間軸のように軸のない4区分と鳥瞰図は、軸の名前を出さずに並べる
       return `
         ${zone(QL.Quadrant.unsorted)}
         <div class="matrix no-axes">
@@ -912,6 +969,16 @@ if (typeof module !== "undefined") module.exports = QL;
       </div>`;
   }
 
+  /**
+   * 全プロジェクトの鳥瞰図で、どのプロジェクトの項目かを示す札(プロジェクト名だけ)
+   */
+  function projectTag(item) {
+    const project = projectById(item.projectId);
+    if (!project) return "";
+    return `<button class="project-tag" data-jump="${project.id}" type="button" title="「${esc(project.name)}」を開く">
+      <span class="dot" style="background: var(--c-${project.color})"></span>${esc(project.name)}</button>`;
+  }
+
   /** 完了した日時(今日なら時刻だけ、今年なら月日と時刻) */
   function doneLabel(time) {
     const d = new Date(time);
@@ -923,7 +990,7 @@ if (typeof module !== "undefined") module.exports = QL;
   }
 
   /** 1行。親のない項目は、未完了なら下に子と「子を追加」の入力欄を続ける */
-  function rowHTML(item) {
+  function rowHTML(item, { showProject = false } = {}) {
     const isLinger = lingering.has(item.id);
     const isChild = item.parentId != null;
     // どの行もドラッグできる(ゴミ箱へ落とすと削除)。名前の変更中だけは文字を選べるように止める
@@ -946,6 +1013,7 @@ if (typeof module !== "undefined") module.exports = QL;
           title="${blocked ? "子がすべて終わると完了にできます" : ""}">${item.done ? "✓" : ""}</button>
         ${title}
         ${progress ? `<span class="progress">${progress}</span>` : ""}
+        ${showProject ? projectTag(item) : ""}
         ${item.done && item.doneAt ? `<span class="done-at" title="完了した日時">${doneLabel(item.doneAt)} 完了</span>` : ""}
         ${isLinger ? `<span class="linger-bar"></span>` : ""}
       </div>`;
@@ -1102,7 +1170,7 @@ if (typeof module !== "undefined") module.exports = QL;
       QL.updateProject(state, dialogProjectId, { name, color: dialogColor, template: dialogTemplate });
     } else {
       const project = QL.createProject(state, name, dialogColor, Date.now(), dialogTemplate);
-      if (project) { selected = project.id; showingTrash = false; }
+      if (project) { selected = project.id; showingTrash = false; showingOverview = false; }
     }
     commit();
   });
@@ -1168,6 +1236,7 @@ if (typeof module !== "undefined") module.exports = QL;
     state = imported;
     selected = null;
     showingTrash = false;
+    showingOverview = false;
     editingId = null;
     addingChildFor = null;
     lingering.clear();
@@ -1178,10 +1247,19 @@ if (typeof module !== "undefined") module.exports = QL;
   // MARK: イベント
 
   nav.addEventListener("click", (e) => {
+    if (e.target.closest("[data-view='overview']")) {
+      showingOverview = true;
+      showingTrash = false;
+      editingId = null;
+      addingChildFor = null;
+      render();
+      return;
+    }
     const item = e.target.closest("[data-nav]");
     if (!item) return;
     selected = item.dataset.nav || null;
     showingTrash = false;
+    showingOverview = false;
     editingId = null;
     render();
   });
@@ -1237,6 +1315,15 @@ if (typeof module !== "undefined") module.exports = QL;
 
   main.addEventListener("click", (e) => {
     if (e.target.closest("#edit-project")) { openProjectDialog(projectById(selected)); return; }
+    const jump = e.target.closest("[data-jump]");
+    if (jump) {
+      selected = jump.dataset.jump;
+      showingOverview = false;
+      editingId = null;
+      addingChildFor = null;
+      render();
+      return;
+    }
     const row = e.target.closest(".row");
     const action = e.target.closest("[data-action]")?.dataset.action;
     if (action === "clear-done") {
@@ -1329,7 +1416,11 @@ if (typeof module !== "undefined") module.exports = QL;
     if (!zone || !draggingId) return;
     e.preventDefault();
     const before = dropBefore(zone, e.clientY);
-    const moved = QL.placeItem(state, draggingId, Number(zone.dataset.quadrant), before?.dataset.id ?? null);
+    // 全プロジェクトの鳥瞰図では、ほかのプロジェクトの項目の前には入れられないので、そのときは自分のプロジェクトの末尾へ
+    const dragged = QL.findItem(state, draggingId);
+    const beforeItem = before && QL.findItem(state, before.dataset.id);
+    const beforeId = beforeItem && beforeItem.projectId === dragged?.projectId ? beforeItem.id : null;
+    const moved = QL.placeItem(state, draggingId, Number(zone.dataset.quadrant), beforeId);
     endDrag();
     clearDropMarks();
     if (moved) commit();
@@ -1407,6 +1498,7 @@ if (typeof module !== "undefined") module.exports = QL;
   const trash = $("trash");
   trash.addEventListener("click", () => {
     showingTrash = true;
+    showingOverview = false;
     editingId = null;
     addingChildFor = null;
     render();
