@@ -54,6 +54,10 @@ input, textarea { font: inherit; color: inherit; }
 .nav-item:hover { background: var(--hover); }
 .nav-item.active { background: var(--panel); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); font-weight: 600; }
 .nav-item.drop-target { background: var(--drop); outline: 2px solid var(--accent); }
+/* プロジェクトの並べ替え: 落とす位置の線 */
+.nav-item.dragging { opacity: 0.35; }
+.nav-item.insert-before { box-shadow: inset 0 3px 0 var(--accent); }
+.nav-item.insert-after { box-shadow: inset 0 -3px 0 var(--accent); }
 .nav-item .count { margin-left: auto; color: var(--sub); font-variant-numeric: tabular-nums; }
 .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .inbox-icon { width: 18px; text-align: center; flex: none; font-size: 13px; }
@@ -662,6 +666,17 @@ const QL = (() => {
     return [...state.projects].sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt - b.createdAt);
   }
 
+  /** プロジェクトを並べ替える(beforeId の前へ。null なら末尾)。動かしたら true */
+  function moveProject(state, id, beforeId = null) {
+    const project = state.projects.find((p) => p.id === id);
+    if (!project || beforeId === id) return false;
+    const list = sortedProjects(state).filter((p) => p.id !== id);
+    const index = beforeId == null ? list.length : list.findIndex((p) => p.id === beforeId);
+    if (index < 0) return false;
+    project.sortOrder = orderBetween(list[index - 1]?.sortOrder ?? null, list[index]?.sortOrder ?? null);
+    return true;
+  }
+
   function createProject(state, name, color = "blue", now = Date.now(), template = 0) {
     const trimmed = String(name).trim();
     if (!trimmed) return null;
@@ -701,7 +716,7 @@ const QL = (() => {
     splitTitles, addItems, findItem, children, rename, canComplete, setDone, addChildren, childProgress,
     placeItem, deleteItems, restoreItems, isAlive,
     trashItems, undoTrash, trashedItems, trashedChildren, restoreFromTrash, emptyTrash,
-    moveToProject, undoMove, sortedProjects, createProject, updateProject, deleteProject, openCount,
+    moveToProject, undoMove, sortedProjects, moveProject, createProject, updateProject, deleteProject, openCount,
   };
 })();
 
@@ -726,6 +741,8 @@ if (typeof module !== "undefined") module.exports = QL;
   const lingering = new Set();
   let editingId = null;
   let draggingId = null;
+  /** 並べ替えのためにつかんでいるプロジェクトの id */
+  let draggingProjectId = null;
   /** 「子を追加」の入力欄を開いている親の id */
   let addingChildFor = null;
   /** 描き直しで入力欄が消えるときの focusout を無視するため */
@@ -771,8 +788,10 @@ if (typeof module !== "undefined") module.exports = QL;
   }
 
   function renderNav() {
+    // プロジェクトはドラッグで並べ替えられる(すべてのやること は先頭に固定)
     const entry = (id, label, icon, count) => `
-      <button class="nav-item${!showingTrash && selected === id ? " active" : ""}" data-nav="${id ?? ""}" type="button">
+      <button class="nav-item${!showingTrash && selected === id ? " active" : ""}" data-nav="${id ?? ""}" type="button"
+        ${id == null ? "" : `draggable="true" data-project="${id}"`}>
         ${icon}<span>${esc(label)}</span><span class="count">${count}</span>
       </button>`;
     nav.innerHTML =
@@ -1247,16 +1266,26 @@ if (typeof module !== "undefined") module.exports = QL;
   main.addEventListener("dragstart", (e) => {
     const row = e.target.closest(".row");
     if (!row) return;
+    endDrag();
     draggingId = row.dataset.id;
     row.classList.add("dragging");
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", draggingId);
   });
   main.addEventListener("dragend", () => {
-    draggingId = null;
+    endDrag();
     clearDropMarks();
     document.querySelectorAll(".dragging, .drop-target").forEach((el) => el.classList.remove("dragging", "drop-target"));
   });
+
+  /**
+   * ドラッグの状態を片付ける。落とした直後に描き直すと元の要素が消え、dragend が届かないことがあるので、
+   * 落としたときと、次のドラッグを始めたときにも呼ぶ
+   */
+  function endDrag() {
+    draggingId = null;
+    draggingProjectId = null;
+  }
 
   /** マスやプロジェクトへ動かせるのは、親のない未完了の項目だけ(子と完了済みは、ゴミ箱へだけ落とせる) */
   function draggingMovable() {
@@ -1301,10 +1330,51 @@ if (typeof module !== "undefined") module.exports = QL;
     e.preventDefault();
     const before = dropBefore(zone, e.clientY);
     const moved = QL.placeItem(state, draggingId, Number(zone.dataset.quadrant), before?.dataset.id ?? null);
+    endDrag();
     clearDropMarks();
     if (moved) commit();
   });
+  // プロジェクトの並べ替え: 左の一覧の中で、プロジェクトをつかんで上下へ動かす
+
+  function clearProjectMarks() {
+    nav.querySelectorAll(".insert-before, .insert-after").forEach((el) => el.classList.remove("insert-before", "insert-after"));
+  }
+
+  /** マウスの高さから、どのプロジェクトの前に入れるかを決める(null = 末尾) */
+  function projectDropBefore(y) {
+    const rows = [...nav.querySelectorAll("[data-project]")].filter((el) => el.dataset.project !== draggingProjectId);
+    return rows.find((el) => {
+      const rect = el.getBoundingClientRect();
+      return y < rect.top + rect.height / 2;
+    }) ?? null;
+  }
+
+  nav.addEventListener("dragstart", (e) => {
+    const target = e.target.closest("[data-project]");
+    if (!target) return;
+    endDrag();
+    draggingProjectId = target.dataset.project;
+    target.classList.add("dragging");
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", draggingProjectId);
+  });
+  nav.addEventListener("dragend", () => {
+    endDrag();
+    clearProjectMarks();
+    nav.querySelectorAll(".dragging").forEach((el) => el.classList.remove("dragging"));
+  });
+
   nav.addEventListener("dragover", (e) => {
+    if (draggingProjectId) {
+      if (!e.target.closest("[data-project]")) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      const before = projectDropBefore(e.clientY);
+      clearProjectMarks();
+      if (before) before.classList.add("insert-before");
+      else [...nav.querySelectorAll("[data-project]")].pop()?.classList.add("insert-after");
+      return;
+    }
     const target = e.target.closest("[data-nav]");
     if (!target || !draggingMovable()) return;
     e.preventDefault();
@@ -1316,10 +1386,21 @@ if (typeof module !== "undefined") module.exports = QL;
     if (target && !target.contains(e.relatedTarget)) target.classList.remove("drop-target");
   });
   nav.addEventListener("drop", (e) => {
+    if (draggingProjectId) {
+      e.preventDefault();
+      const before = projectDropBefore(e.clientY);
+      const id = draggingProjectId;
+      endDrag();
+      clearProjectMarks();
+      if (QL.moveProject(state, id, before?.dataset.project ?? null)) commit();
+      return;
+    }
     const target = e.target.closest("[data-nav]");
     if (!target || !draggingId) return;
     e.preventDefault();
-    move([draggingId], target.dataset.nav || null);
+    const id = draggingId;
+    endDrag();
+    move([id], target.dataset.nav || null);
   });
 
   // ゴミ箱: 行を落とすと削除(5秒は取り消せる)
@@ -1342,8 +1423,10 @@ if (typeof module !== "undefined") module.exports = QL;
     if (!draggingId) return;
     e.preventDefault();
     trash.classList.remove("drop-target");
-    lingering.delete(draggingId);
-    remove([draggingId]);
+    const id = draggingId;
+    endDrag();
+    lingering.delete(id);
+    remove([id]);
   });
 
   // 別のタブで開いていても、保存したら揃える
