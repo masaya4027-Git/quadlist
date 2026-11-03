@@ -853,7 +853,7 @@ if (typeof module !== "undefined") module.exports = QL;
       entry(null, "すべてのやること", `<span class="inbox-icon">📥</span>`, QL.openCount(state, null)) +
       `<button class="nav-item${showingOverview ? " active" : ""}" data-view="overview" type="button"
         title="すべてのプロジェクトのやることを、マスの位置ごとにまとめて見る">
-        <span class="inbox-icon">▦</span><span>全プロジェクトの鳥瞰図</span>${alertBadge(stale.length)}
+        <span class="inbox-icon">▦</span><span>まとめて見る</span>${alertBadge(stale.length)}
         <span class="count">${state.projects.reduce((sum, p) => sum + QL.openCount(state, p.id), 0)}</span>
       </button>` +
       `<div class="nav-section">プロジェクト</div>` +
@@ -951,7 +951,7 @@ if (typeof module !== "undefined") module.exports = QL;
   function renderOverview() {
     const items = QL.overviewItems(state, lingering);
     main.innerHTML = `
-      <div class="header"><h1>▦ 全プロジェクトの鳥瞰図</h1></div>
+      <div class="header"><h1>▦ まとめて見る</h1></div>
       <p class="hint">すべてのプロジェクトのやることを、マスの位置ごとにまとめています。プロジェクト名を押すと、そのプロジェクトを開きます。
         ここでも完了・子の追加・マスの移動(ドラッグ)ができます。</p>
       ${state.projects.length ? matrixHTML(null, items, { overview: true })
