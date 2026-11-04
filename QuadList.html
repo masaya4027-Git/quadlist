@@ -138,6 +138,9 @@ input, textarea { font: inherit; color: inherit; }
 button.add-child-btn:hover { background: var(--hover); }
 .row:hover button.add-child-btn, button.add-child-btn:focus-visible { opacity: 1; }
 .row.child.adding { padding-left: 84px; }
+/* ドラッグ中は、子にする先の＋を濃く出す。重ねた＋は枠で示す */
+body.dragging-item button.add-child-btn { opacity: 1; }
+button.add-child-btn.drop-target { background: var(--drop); outline: 2px solid var(--accent); }
 .done-at { font-size: 12px; color: var(--sub); white-space: nowrap; font-variant-numeric: tabular-nums; }
 /* 全プロジェクトの鳥瞰図: どのプロジェクトの項目か */
 .project-tag {
@@ -183,6 +186,7 @@ button.add-child-btn:hover { background: var(--hover); }
 .axis.row-axis { writing-mode: vertical-rl; align-self: center; letter-spacing: 0.1em; }
 /* 落とす位置の線 */
 .row.insert-before { box-shadow: inset 0 3px 0 var(--accent); }
+.row.insert-after { box-shadow: inset 0 -3px 0 var(--accent); }
 .zone-list.insert-end { box-shadow: inset 0 -3px 0 var(--accent); }
 
 /* ゴミ箱の中 */
@@ -428,6 +432,20 @@ const QL = (() => {
     return 0;
   }
 
+  /**
+   * list(画面の並び順)の index の位置に入れるときの並び順。
+   * 前後の並び順が同じで間に入れられないときは、list を 0, 1, 2… につけ直してから決める(前後の関係は変わらない)
+   */
+  function orderAt(list, index) {
+    const before = list[index - 1]?.sortOrder ?? null;
+    const after = list[index]?.sortOrder ?? null;
+    if (before != null && after != null && before >= after) {
+      list.forEach((it, i) => { it.sortOrder = i; });
+      return index - 0.5;
+    }
+    return orderBetween(before, after);
+  }
+
   /** ゴミ箱に入っていない */
   function isAlive(item) {
     return item.deletedAt == null;
@@ -544,18 +562,60 @@ const QL = (() => {
 
   /**
    * マスの中の、指定した項目の前に置く(beforeId が null ならマスの末尾)。
+   * overview なら、まとめて見るの並び(全プロジェクトで1本)の中で置く。ほかのプロジェクトの項目の前にも入れられる。
+   * 並び順は1つなので、プロジェクトの中の前後もそのとおりに変わる。
    * マスが変わったときだけ置いた時刻を数え直す。動かしたら true
    */
-  function placeItem(state, id, quadrant, beforeId = null, now = Date.now()) {
+  function placeItem(state, id, quadrant, beforeId = null, now = Date.now(), { overview = false } = {}) {
     const item = findItem(state, id);
     if (!item || item.done || item.parentId != null || item.projectId == null) return false;
     if (![0, 1, 2, 3, 4].includes(quadrant) || beforeId === id) return false;
-    const list = itemsIn(state, item.projectId, quadrant).filter((it) => it.id !== id);
+    const pool = overview ? overviewItems(state).filter((it) => !it.done && it.quadrant === quadrant)
+      : itemsIn(state, item.projectId, quadrant);
+    const list = pool.filter((it) => it.id !== id);
     const index = beforeId == null ? list.length : list.findIndex((it) => it.id === beforeId);
     if (index < 0) return false;
     if (item.quadrant !== quadrant) item.placedAt = now;
     item.quadrant = quadrant;
-    item.sortOrder = orderBetween(list[index - 1]?.sortOrder ?? null, list[index]?.sortOrder ?? null);
+    item.sortOrder = orderAt(list, index);
+    return true;
+  }
+
+  /**
+   * id のやることを、parentId のやることの子にできるか(＋へドラッグしたとき)。
+   * 親子は2段までなので、子を持つやること(ゴミ箱の中の子も)・子・完了済みの親には入れない
+   */
+  function canMakeChild(state, id, parentId) {
+    const item = findItem(state, id);
+    const parent = findItem(state, parentId);
+    if (!item || !parent || id === parentId || !isAlive(item) || !isAlive(parent)) return false;
+    if (item.done || parent.done || parent.parentId != null || item.parentId === parentId) return false;
+    return !state.items.some((it) => it.parentId === id);
+  }
+
+  /** 子にする(親の子の末尾へ)。子を別の親へ移すときにも使う。取り消し用に、動かす前の写しを返す(できなければ null) */
+  function makeChild(state, id, parentId, now = Date.now()) {
+    if (!canMakeChild(state, id, parentId)) return null;
+    const item = findItem(state, id);
+    const parent = findItem(state, parentId);
+    const before = { ...item };
+    const list = children(state, parentId);
+    item.parentId = parentId;
+    item.projectId = parent.projectId;
+    item.quadrant = Quadrant.unsorted;
+    item.sortOrder = orderBetween(list.length ? list[list.length - 1].sortOrder : null, null);
+    item.placedAt = now;
+    return before;
+  }
+
+  /** 子を、同じ親の子の beforeId の前へ(null なら末尾)。動かしたら true */
+  function moveChild(state, id, beforeId = null) {
+    const item = findItem(state, id);
+    if (!item || item.parentId == null || beforeId === id) return false;
+    const list = children(state, item.parentId).filter((c) => c.id !== id);
+    const index = beforeId == null ? list.length : list.findIndex((c) => c.id === beforeId);
+    if (index < 0) return false;
+    item.sortOrder = orderAt(list, index);
     return true;
   }
 
@@ -701,15 +761,14 @@ const QL = (() => {
   }
 
   /**
-   * 全プロジェクトの鳥瞰図: すべてのプロジェクトの未完了の項目(親のないもの)。
-   * プロジェクトの並び順でまとめ、その中はマスの中の並び順。keepIds は完了直後で残している項目
+   * まとめて見る(全プロジェクトの鳥瞰図): すべてのプロジェクトの未完了の項目(親のないもの)。
+   * マスの中は、プロジェクトに関係なく並び順(sortOrder)の1本で並べる(2026-11-04 からプロジェクトごとにまとめない)。
+   * keepIds は完了直後で残している項目
    */
   function overviewItems(state, keepIds = new Set()) {
-    const rank = new Map(sortedProjects(state).map((p, i) => [p.id, i]));
-    const items = state.items.filter((it) => isAlive(it) && it.parentId == null && rank.has(it.projectId) &&
-      (!it.done || keepIds.has(it.id)));
-    return displayOrder(items).sort((a, b) =>
-      (DISPLAY_RANK[a.quadrant] - DISPLAY_RANK[b.quadrant]) || (rank.get(a.projectId) - rank.get(b.projectId)));
+    const projectIds = new Set(state.projects.map((p) => p.id));
+    return displayOrder(state.items.filter((it) => isAlive(it) && it.parentId == null && projectIds.has(it.projectId) &&
+      (!it.done || keepIds.has(it.id))));
   }
 
   /** プロジェクトを並べ替える(beforeId の前へ。null なら末尾)。動かしたら true */
@@ -760,7 +819,7 @@ const QL = (() => {
     displayOrder, orderBetween, topItems, openItems, doneItems, itemsIn, appendOrder,
     TEMPLATES, templateOf, quadrantName,
     splitTitles, addItems, findItem, children, rename, canComplete, setDone, addChildren, childProgress,
-    placeItem, deleteItems, restoreItems, isAlive,
+    placeItem, canMakeChild, makeChild, moveChild, deleteItems, restoreItems, isAlive,
     trashItems, undoTrash, trashedItems, trashedChildren, restoreFromTrash, emptyTrash,
     moveToProject, undoMove, sortedProjects, moveProject, overviewItems, STALE_MS, staleItems, createProject, updateProject, deleteProject, openCount,
   };
@@ -1086,7 +1145,7 @@ if (typeof module !== "undefined") module.exports = QL;
       ? `<input class="title-input" data-edit="${item.id}" value="${esc(item.title)}" aria-label="名前を変更">`
       : `<span class="title" data-rename="${item.id}" title="${item.done ? "" : "クリックで名前を変更"}">${esc(item.title)}</span>`;
     const row = `
-      <div class="row ${isChild ? "child" : "top"}${item.done ? " done" : ""}" draggable="${draggable}" data-id="${item.id}">
+      <div class="row ${isChild ? "child" : "top"}${item.done ? " done" : ""}" draggable="${draggable}" data-id="${item.id}"${isChild ? ` data-parent="${item.parentId}"` : ""}>
         <span class="grip" aria-hidden="true">⋮⋮</span>
         ${isChild ? "" : canAddChild
           ? `<button class="add-child-btn" data-action="add-child" type="button" aria-label="子を追加" title="子を追加">＋</button>`
@@ -1164,6 +1223,15 @@ if (typeof module !== "undefined") module.exports = QL;
     commit();
     const label = before.length === 1 ? `「${before[0].title}」` : `${before.length}件`;
     showUndo(`${label}を${nameOf(projectId)}へ移しました`, () => QL.undoMove(state, before));
+  }
+
+  /** やることを、別のやることの子にする(＋へドラッグしたとき)。5秒は「取り消す」で元に戻せる */
+  function makeChild(id, parentId) {
+    const before = QL.makeChild(state, id, parentId);
+    if (!before) return;
+    lingering.delete(id);
+    commit();
+    showUndo(`「${before.title}」を「${QL.findItem(state, parentId).title}」の子にしました`, () => QL.undoMove(state, [before]));
   }
 
   /** ゴミ箱へ入れる(子も一緒に)。5秒は「取り消す」で元の位置に戻せる */
@@ -1440,6 +1508,7 @@ if (typeof module !== "undefined") module.exports = QL;
     endDrag();
     draggingId = row.dataset.id;
     row.classList.add("dragging");
+    document.body.classList.add("dragging-item");  // ドラッグ中は、子にする先の＋を濃く出す
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", draggingId);
   });
@@ -1456,6 +1525,7 @@ if (typeof module !== "undefined") module.exports = QL;
   function endDrag() {
     draggingId = null;
     draggingProjectId = null;
+    document.body.classList.remove("dragging-item");
   }
 
   /** マスやプロジェクトへ動かせるのは、親のない未完了の項目だけ(子と完了済みは、ゴミ箱へだけ落とせる) */
@@ -1466,8 +1536,31 @@ if (typeof module !== "undefined") module.exports = QL;
 
   // ドラッグ: プロジェクトの中では、マスへ落とすと仕分け、マスの中の位置で並べ替え
   function clearDropMarks() {
-    main.querySelectorAll(".zone.drop-target, .insert-before, .insert-end")
-      .forEach((el) => el.classList.remove("drop-target", "insert-before", "insert-end"));
+    main.querySelectorAll(".drop-target, .insert-before, .insert-after, .insert-end")
+      .forEach((el) => el.classList.remove("drop-target", "insert-before", "insert-after", "insert-end"));
+  }
+
+  /** 行の＋(子を追加)の上で、いま掴んでいるやることをその子にできるなら、その＋を返す */
+  function plusTarget(e) {
+    const plus = e.target.closest("button.add-child-btn");
+    const parentId = plus?.closest(".row")?.dataset.id;
+    return plus && draggingId && QL.canMakeChild(state, draggingId, parentId) ? plus : null;
+  }
+
+  /** 子を掴んでいて、同じ親の子の行の上にいるなら、その親の子の行(掴んでいる行を除く)を返す */
+  function siblingRows(e) {
+    const dragged = draggingId && QL.findItem(state, draggingId);
+    const over = e.target.closest(".row.child[data-parent]");
+    if (!dragged || dragged.parentId == null || over?.dataset.parent !== dragged.parentId) return null;
+    return [...main.querySelectorAll(`.row.child[data-parent="${dragged.parentId}"]:not(.dragging)`)];
+  }
+
+  /** マウスの高さから、どの子の前に入れるかを決める(null = 末尾) */
+  function childDropBefore(rows, y) {
+    return rows.find((row) => {
+      const rect = row.getBoundingClientRect();
+      return y < rect.top + rect.height / 2;
+    }) ?? null;
   }
 
   /** マウスの高さから、どの行の前に入れるかを決める(null = 末尾) */
@@ -1481,6 +1574,26 @@ if (typeof module !== "undefined") module.exports = QL;
   }
 
   main.addEventListener("dragover", (e) => {
+    // ＋の上: 子にする
+    const plus = plusTarget(e);
+    if (plus) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      clearDropMarks();
+      plus.classList.add("drop-target");
+      return;
+    }
+    // 子を同じ親の子の上で動かす: 子の並べ替え
+    const rows = siblingRows(e);
+    if (rows) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      clearDropMarks();
+      const before = childDropBefore(rows, e.clientY);
+      if (before) before.classList.add("insert-before");
+      else rows[rows.length - 1]?.classList.add("insert-after");
+      return;
+    }
     const zone = e.target.closest("[data-quadrant]");
     if (!zone || !draggingMovable()) return;
     e.preventDefault();
@@ -1496,15 +1609,32 @@ if (typeof module !== "undefined") module.exports = QL;
     if (zone && !zone.contains(e.relatedTarget)) clearDropMarks();
   });
   main.addEventListener("drop", (e) => {
+    const plus = plusTarget(e);
+    if (plus) {
+      e.preventDefault();
+      const id = draggingId;
+      endDrag();
+      clearDropMarks();
+      makeChild(id, plus.closest(".row").dataset.id);
+      return;
+    }
+    const rows = siblingRows(e);
+    if (rows) {
+      e.preventDefault();
+      const before = childDropBefore(rows, e.clientY);
+      const moved = QL.moveChild(state, draggingId, before?.dataset.id ?? null);
+      endDrag();
+      clearDropMarks();
+      if (moved) commit();
+      return;
+    }
     const zone = e.target.closest("[data-quadrant]");
     if (!zone || !draggingId) return;
     e.preventDefault();
     const before = dropBefore(zone, e.clientY);
-    // 全プロジェクトの鳥瞰図では、ほかのプロジェクトの項目の前には入れられないので、そのときは自分のプロジェクトの末尾へ
-    const dragged = QL.findItem(state, draggingId);
-    const beforeItem = before && QL.findItem(state, before.dataset.id);
-    const beforeId = beforeItem && beforeItem.projectId === dragged?.projectId ? beforeItem.id : null;
-    const moved = QL.placeItem(state, draggingId, Number(zone.dataset.quadrant), beforeId);
+    // まとめて見るでは、プロジェクトをまたいだ1本の並びの中に入れる
+    const moved = QL.placeItem(state, draggingId, Number(zone.dataset.quadrant), before?.dataset.id ?? null,
+      Date.now(), { overview: showingOverview });
     endDrag();
     clearDropMarks();
     if (moved) commit();
